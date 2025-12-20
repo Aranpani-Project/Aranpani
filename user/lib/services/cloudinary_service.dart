@@ -6,7 +6,7 @@ class CloudinaryService {
   static const String _cloudName = 'dvjuryrnz';
   static const String _uploadPreset = 'aranpani_unsigned_upload';
 
-  static Future<String> uploadImage({
+  static Future<String> uploadImage( {
     required File imageFile,
     required String userId,
     required String projectId,

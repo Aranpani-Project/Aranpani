@@ -43,8 +43,7 @@ class _PlaceTemplesScreenState extends State<PlaceTemplesScreen> {
 
       // Try to read district name from first project (if any)
       if (snap.docs.isNotEmpty) {
-        districtName =
-            (snap.docs.first.data()['district'] ?? '').toString();
+        districtName = (snap.docs.first.data()['district'] ?? '').toString();
       } else {
         districtName = '';
       }
@@ -74,12 +73,12 @@ class _PlaceTemplesScreenState extends State<PlaceTemplesScreen> {
         final uid = (data['userId'] ?? '').toString();
         final userData = usersById[uid] ?? {};
 
+        // status mapping
         final bool isSanctioned = data['isSanctioned'] == true;
         String status;
         if (!isSanctioned) {
           status = 'pending';
         } else {
-          // simple mapping: if progress == 100 -> completed, else ongoing
           final num progressNum = (data['progress'] ?? 0) as num;
           final int progress = progressNum.toInt();
           if (progress >= 100) {
@@ -89,18 +88,59 @@ class _PlaceTemplesScreenState extends State<PlaceTemplesScreen> {
           }
         }
 
+        // parse numeric amounts
+        final double estimatedAmount =
+            double.tryParse((data['estimatedAmount'] ?? '0').toString()) ?? 0.0;
+        final double featureAmount =
+            double.tryParse((data['featureAmount'] ?? '0').toString()) ?? 0.0;
+
+        // imageUrls list
+        final List<String> imageUrls =
+            List<String>.from(data['imageUrls'] ?? []);
+
         return <String, dynamic>{
           'id': doc.id,
+
+          // location
           'district': data['district'] ?? '',
           'taluk': data['taluk'] ?? '',
           'place': data['place'] ?? '',
-          'name': data['feature'] != null && data['feature'] != ''
+          'nearbyTown': data['nearbyTown'] ?? '',
+          'mapLocation': data['mapLocation'] ?? '',
+
+          // feature / project
+          'feature': data['feature'] ?? '',
+          'featureType': data['featureType'] ?? '',
+          'featureDimension': data['featureDimension'] ?? '',
+          'featureAmount': featureAmount,
+
+          // display name
+          'name': (data['feature'] != null && data['feature'] != '')
               ? '${data['feature']} Project'
               : 'Temple Project',
+
+          // status
           'status': status,
+          'progress': (data['progress'] ?? 0) as num,
+          'isSanctioned': isSanctioned,
+
+          // user / contact
+          'userId': uid,
           'userName': userData['name'] ?? data['contactName'] ?? '',
           'userEmail': userData['email'] ?? '',
           'userPhone': userData['phoneNumber'] ?? data['contactPhone'] ?? '',
+          'contactName': data['contactName'] ?? '',
+          'contactPhone': data['contactPhone'] ?? '',
+
+          // money
+          'estimatedAmount': estimatedAmount,
+
+          // images
+          'imageUrls': imageUrls,
+
+          // meta
+          'projectNumber': data['projectNumber'] ?? '',
+          'dateCreated': data['dateCreated'],
           'submittedDate':
               (data['dateCreated'] != null && data['dateCreated'] is Timestamp)
                   ? (data['dateCreated'] as Timestamp)
@@ -108,9 +148,8 @@ class _PlaceTemplesScreenState extends State<PlaceTemplesScreen> {
                       .toIso8601String()
                       .substring(0, 10)
                   : '',
-          'estimatedAmount':
-              double.tryParse((data['estimatedAmount'] ?? '0').toString()) ??
-                  0.0,
+
+          // keep full snapshot too
           'raw': data,
         };
       }).toList();
@@ -157,8 +196,7 @@ class _PlaceTemplesScreenState extends State<PlaceTemplesScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     IconButton(
-                      icon:
-                          const Icon(Icons.arrow_back, color: Colors.white),
+                      icon: const Icon(Icons.arrow_back, color: Colors.white),
                       onPressed: () => Navigator.pop(context),
                     ),
                     Text(
@@ -204,8 +242,8 @@ class _PlaceTemplesScreenState extends State<PlaceTemplesScreen> {
                               : statusTab == 1
                                   ? 'No ongoing projects'
                                   : 'No completed projects',
-                          style: const TextStyle(
-                              fontSize: 16, color: Colors.grey),
+                          style:
+                              const TextStyle(fontSize: 16, color: Colors.grey),
                         ),
                       )
                     : ListView.builder(
@@ -262,17 +300,26 @@ class _PlaceTemplesScreenState extends State<PlaceTemplesScreen> {
   Widget _buildTempleCard(Map<String, dynamic> temple, Color borderColor) {
     final id = (temple['id'] ?? '') as String;
     final name = (temple['name'] ?? '') as String;
+
     final userName = (temple['userName'] ?? '') as String;
     final userEmail = (temple['userEmail'] ?? '') as String;
     final userPhone = (temple['userPhone'] ?? '') as String;
     final submittedDate = (temple['submittedDate'] ?? 'N/A') as String;
-    final estimatedAmountNum =
-        (temple['estimatedAmount'] ?? 0.0) as num;
+
+    final estimatedAmountNum = (temple['estimatedAmount'] ?? 0.0) as num;
     final estimatedAmount = estimatedAmountNum.toDouble();
 
     final district = (temple['district'] ?? '') as String;
     final taluk = (temple['taluk'] ?? '') as String;
     final place = (temple['place'] ?? '') as String;
+
+    final feature = (temple['feature'] ?? '') as String;
+    final featureType = (temple['featureType'] ?? '') as String;
+    final featureDimension = (temple['featureDimension'] ?? '') as String;
+    final featureAmountNum = (temple['featureAmount'] ?? 0.0) as num;
+    final featureAmount = featureAmountNum.toDouble();
+
+    final imageUrls = List<String>.from(temple['imageUrls'] ?? []);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -310,21 +357,73 @@ class _PlaceTemplesScreenState extends State<PlaceTemplesScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // title
               Text(
                 name,
                 style:
                     const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(height: 4),
+
+              // location short
               if (district.isNotEmpty || taluk.isNotEmpty || place.isNotEmpty)
                 Text(
                   [district, taluk, place]
                       .where((s) => s.isNotEmpty)
                       .join(' • '),
-                  style:
-                      const TextStyle(fontSize: 12, color: Colors.grey),
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
+
+              const SizedBox(height: 6),
+
+              // PROJECT COMPONENT: feature type, dimension, feature amount
+              if (feature.isNotEmpty ||
+                  featureType.isNotEmpty ||
+                  featureDimension.isNotEmpty ||
+                  featureAmount > 0)
+                Text(
+                  'Project: '
+                  '${feature.isNotEmpty ? feature : '—'}'
+                  '${featureType.isNotEmpty ? ' • ${featureType[0].toUpperCase()}${featureType.substring(1)}' : ''}'
+                  '${featureDimension.isNotEmpty ? ' • $featureDimension' : ''}'
+                  '${featureAmount > 0 ? ' • ₹${featureAmount.toStringAsFixed(0)}' : ''}',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+
               const SizedBox(height: 8),
+
+              // SITE IMAGES PREVIEW
+              if (imageUrls.isNotEmpty)
+                SizedBox(
+                  height: 90,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: imageUrls.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (context, index) {
+                      final url = imageUrls[index];
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: AspectRatio(
+                          aspectRatio: 1.5,
+                          child: Image.network(
+                            url,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: Colors.grey.shade300,
+                              alignment: Alignment.center,
+                              child: const Icon(Icons.broken_image, size: 20),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+              if (imageUrls.isNotEmpty) const SizedBox(height: 8),
+
+              // user info
               Row(
                 children: [
                   const Icon(Icons.person,
@@ -342,11 +441,12 @@ class _PlaceTemplesScreenState extends State<PlaceTemplesScreen> {
                             color: Color(0xFF4F46E5),
                           ),
                         ),
-                        Text(
-                          userEmail,
-                          style: const TextStyle(
-                              fontSize: 12, color: Colors.grey),
-                        ),
+                        if (userEmail.isNotEmpty)
+                          Text(
+                            userEmail,
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.grey),
+                          ),
                         if (userPhone.isNotEmpty)
                           Text(
                             userPhone,
@@ -358,11 +458,13 @@ class _PlaceTemplesScreenState extends State<PlaceTemplesScreen> {
                   ),
                 ],
               ),
+
               const SizedBox(height: 8),
+
+              // dates and amount
               Text(
                 'Submitted: $submittedDate',
-                style:
-                    const TextStyle(fontSize: 14, color: Colors.grey),
+                style: const TextStyle(fontSize: 14, color: Colors.grey),
               ),
               Text(
                 '₹${estimatedAmount.toStringAsFixed(0)}',

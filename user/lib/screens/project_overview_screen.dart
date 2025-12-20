@@ -1,10 +1,11 @@
-// lib/screens/project_overview_screen.dart
-import 'package:flutter/material.dart';
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart'; // kept as requested
-import 'dart:io';
+
+import '/services/cloudinary_service.dart';
 
 class ProjectOverviewScreen extends StatefulWidget {
   final Map<String, dynamic> project;
@@ -23,20 +24,30 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
 
   final ImagePicker _picker = ImagePicker();
 
-  // OFFLINE BILLS STORAGE
+  // Local bills cache for UI
   List<Map<String, dynamic>> _localBills = [];
 
-  // FORM CONTROLLERS FOR ACTIVITIES TAB
+  // Activities form
   final TextEditingController _godNameController = TextEditingController();
   final TextEditingController _peopleController = TextEditingController();
   final TextEditingController _donationController = TextEditingController();
   final TextEditingController _billingController = TextEditingController();
   String _workPart = 'lingam';
 
+  String get _projectId => widget.project['id'] as String;
+  String get _userId => (widget.project['userId'] ?? '') as String;
+
+  CollectionReference<Map<String, dynamic>> get _activitiesRef =>
+      _firestore.collection('activities');
+
+  CollectionReference<Map<String, dynamic>> get _billsRef =>
+      _firestore.collection('bills');
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _loadLatestActivity(); // load previously saved activity
   }
 
   @override
@@ -49,9 +60,65 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     super.dispose();
   }
 
-  // ======================================================================
-  // UPLOAD BILL DIALOG (OFFLINE)
-  // ======================================================================
+  // --------- load last saved activity so fields stay filled ---------
+  Future<void> _loadLatestActivity() async {
+    try {
+      final snap = await _activitiesRef
+          .where('projectId', isEqualTo: _projectId)
+          .orderBy('createdAt', descending: true)
+          .limit(1)
+          .get();
+
+      if (snap.docs.isEmpty) return;
+
+      final data = snap.docs.first.data();
+      setState(() {
+        _godNameController.text = data['godName'] ?? '';
+        _peopleController.text = data['peopleVisited'] ?? '';
+        _donationController.text = data['amountDonated'] ?? '';
+        _billingController.text = data['billingCurrent'] ?? '';
+        _workPart = (data['workPart'] ?? 'lingam') as String;
+      });
+    } catch (_) {
+      // optional: show error
+    }
+  }
+
+  // ------------ ACTIVITIES: SAVE TO /activities ------------
+  Future<void> _submitActivityForm() async {
+    final godName = _godNameController.text.trim();
+    if (godName.isEmpty) return;
+
+    setState(() => _loadingAdd = true);
+
+    try {
+      await _activitiesRef.add({
+        'userId': _userId,
+        'projectId': _projectId,
+        'godName': godName,
+        'workPart': _workPart,
+        'peopleVisited': _peopleController.text.trim(),
+        'amountDonated': _donationController.text.trim(),
+        'billingCurrent': _billingController.text.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      // IMPORTANT: do NOT clear controllers; instead reload latest so data stays
+      await _loadLatestActivity();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Work details saved')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _loadingAdd = false);
+    }
+  }
+
+  // ------------ BILLS: Cloudinary + /bills ------------
   Future<void> _showUploadBillDialog() async {
     final TextEditingController titleCtrl = TextEditingController();
     final TextEditingController amountCtrl = TextEditingController();
@@ -160,155 +227,59 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF8E3D2C),
               ),
-              onPressed: () {
+              onPressed: () async {
                 if (titleCtrl.text.trim().isEmpty ||
-                    amountCtrl.text.trim().isEmpty) return;
+                    amountCtrl.text.trim().isEmpty ||
+                    selectedImages.isEmpty) {
+                  return;
+                }
 
-                setState(() {
-                  _localBills.insert(0, {
+                Navigator.pop(context);
+
+                try {
+                  final amount =
+                      double.tryParse(amountCtrl.text.trim()) ?? 0.0;
+                  final now = DateTime.now();
+
+                  // upload each image to Cloudinary
+                  final List<String> urls = [];
+                  for (final x in selectedImages) {
+                    final url = await CloudinaryService.uploadImage(
+                      imageFile: File(x.path),
+                      userId: _userId,
+                      projectId: _projectId,
+                    );
+                    urls.add(url);
+                  }
+
+                  // create bill doc
+                  final doc = await _billsRef.add({
+                    'userId': _userId,
+                    'projectId': _projectId,
                     'title': titleCtrl.text.trim(),
-                    'amount': amountCtrl.text.trim(),
-                    'images': selectedImages,
-                    'date': DateTime.now(),
+                    'amount': amount,
+                    'imageUrls': urls,
+                    'createdAt': now,
                   });
-                });
 
-                Navigator.pop(context);
-              },
-              child: Text('Upload',
-                  style: GoogleFonts.poppins(color: Colors.white)),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // ======================================================================
-  // EDIT BILL
-  // ======================================================================
-  Future<void> _editBill(int index) async {
-    final bill = _localBills[index];
-
-    TextEditingController titleCtrl =
-        TextEditingController(text: bill['title']);
-    TextEditingController amountCtrl =
-        TextEditingController(text: bill['amount']);
-
-    List<XFile> selectedImages = List<XFile>.from(bill['images']);
-
-    await showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFFFFF7E8),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: const BorderSide(color: Color(0xFFB6862C), width: 2),
-          ),
-          title: Text(
-            'Edit Bill',
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFF6A1F1A),
-            ),
-          ),
-          content: StatefulBuilder(
-            builder: (context, setStateSB) {
-              return SingleChildScrollView(
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: titleCtrl,
-                      decoration: InputDecoration(
-                        labelText: 'Bill Name',
-                        filled: true,
-                        fillColor: const Color(0xFFFFF2D5),
-                        enabledBorder: OutlineInputBorder(
-                          borderSide:
-                              const BorderSide(color: Color(0xFFB6862C)),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: amountCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Amount',
-                        filled: true,
-                        fillColor: const Color(0xFFFFF2D5),
-                        enabledBorder: OutlineInputBorder(
-                          borderSide:
-                              const BorderSide(color: Color(0xFFB6862C)),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF8E3D2C),
-                      ),
-                      onPressed: () async {
-                        final imgs = await _picker.pickMultiImage();
-                        if (imgs != null && imgs.isNotEmpty) {
-                          setStateSB(() {
-                            selectedImages = imgs;
-                          });
-                        }
-                      },
-                      child: Text('Change Images',
-                          style: GoogleFonts.poppins(color: Colors.white)),
-                    ),
-                    const SizedBox(height: 10),
-                    selectedImages.isEmpty
-                        ? Text('No images selected',
-                            style: GoogleFonts.poppins(color: Colors.grey))
-                        : Wrap(
-                            spacing: 8,
-                            children: selectedImages
-                                .map((img) => ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Image.file(
-                                        File(img.path),
-                                        width: 60,
-                                        height: 60,
-                                        fit: BoxFit.cover,
-                                      ),
-                                    ))
-                                .toList(),
-                          ),
-                  ],
-                ),
-              );
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text("Cancel",
-                  style: GoogleFonts.poppins(color: Colors.brown)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF8E3D2C),
-              ),
-              onPressed: () {
-                setState(() {
-                  _localBills[index] = {
-                    'title': titleCtrl.text.trim(),
-                    'amount': amountCtrl.text.trim(),
-                    'images': selectedImages,
-                    'date': bill['date'],
-                  };
-                });
-
-                Navigator.pop(context);
+                  // local cache
+                  setState(() {
+                    _localBills.insert(0, {
+                      'id': doc.id,
+                      'title': titleCtrl.text.trim(),
+                      'amount': amount,
+                      'imageUrls': urls,
+                      'date': now,
+                    });
+                  });
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Upload failed: $e')),
+                  );
+                }
               },
               child:
-                  Text("Save", style: GoogleFonts.poppins(color: Colors.white)),
+                  Text('Upload', style: GoogleFonts.poppins(color: Colors.white)),
             ),
           ],
         );
@@ -316,9 +287,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
-  // ======================================================================
-  // BILLS TAB
-  // ======================================================================
+  // --------- Bills tab (shows what is in _localBills) ---------
   Widget _billsTab() {
     return Column(
       children: [
@@ -366,67 +335,44 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                       margin: const EdgeInsets.symmetric(vertical: 10),
                       child: ListTile(
                         contentPadding: const EdgeInsets.all(14),
-                        title: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              bill['title'],
-                              style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFF6A1F1A),
-                              ),
-                            ),
-                            PopupMenuButton<String>(
-                              icon: const Icon(Icons.more_vert,
-                                  color: Color(0xFF6A1F1A)),
-                              onSelected: (v) {
-                                if (v == 'edit') {
-                                  _editBill(i);
-                                } else if (v == 'delete') {
-                                  setState(() {
-                                    _localBills.removeAt(i);
-                                  });
-                                }
-                              },
-                              itemBuilder: (_) => const [
-                                PopupMenuItem(
-                                    value: 'edit', child: Text("Edit Bill")),
-                                PopupMenuItem(
-                                    value: 'delete',
-                                    child: Text("Delete Bill")),
-                              ],
-                            )
-                          ],
+                        title: Text(
+                          bill['title'],
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF6A1F1A),
+                          ),
                         ),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               "₹${bill['amount']}",
-                              style: GoogleFonts.poppins(color: Colors.brown),
+                              style:
+                                  GoogleFonts.poppins(color: Colors.brown),
                             ),
                             const SizedBox(height: 4),
                             Text(
                               "Date: ${bill['date'].day}/${bill['date'].month}/${bill['date'].year}",
-                              style: GoogleFonts.poppins(color: Colors.brown),
+                              style:
+                                  GoogleFonts.poppins(color: Colors.brown),
                             ),
                             const SizedBox(height: 8),
-                            if (bill['images'] != null &&
-                                bill['images'].isNotEmpty)
+                            if (bill['imageUrls'] != null &&
+                                (bill['imageUrls'] as List).isNotEmpty)
                               SizedBox(
                                 height: 80,
                                 child: ListView(
                                   scrollDirection: Axis.horizontal,
-                                  children: bill['images']
+                                  children: (bill['imageUrls'] as List)
                                       .map<Widget>(
-                                        (img) => Padding(
+                                        (url) => Padding(
                                           padding:
                                               const EdgeInsets.only(right: 8),
                                           child: ClipRRect(
                                             borderRadius:
                                                 BorderRadius.circular(10),
-                                            child: Image.file(
-                                              File(img.path),
+                                            child: Image.network(
+                                              url as String,
                                               width: 80,
                                               height: 80,
                                               fit: BoxFit.cover,
@@ -448,37 +394,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
-  // ======================================================================
-  // ACTIVITIES TAB AS DIRECT FORM
-  // ======================================================================
-  Future<void> _submitActivityForm() async {
-    final godName = _godNameController.text.trim();
-    if (godName.isEmpty) return;
-
-    setState(() => _loadingAdd = true);
-
-    try {
-      await _firestore.collection('activities').add({
-        'projectId': widget.project['id'],
-        'godName': godName,
-        'workPart': _workPart,
-        'peopleVisited': _peopleController.text.trim(),
-        'amountDonated': _donationController.text.trim(),
-        'billingCurrent': _billingController.text.trim(),
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      _godNameController.clear();
-      _peopleController.clear();
-      _donationController.clear();
-      _billingController.clear();
-      _workPart = 'lingam';
-      setState(() {});
-    } finally {
-      if (mounted) setState(() => _loadingAdd = false);
-    }
-  }
-
+  // ------------ ACTIVITIES TAB UI ------------
   Widget _activitiesTab() {
     return SingleChildScrollView(
       child: Padding(
@@ -504,13 +420,15 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                 filled: true,
                 fillColor: const Color(0xFFFFF2D5),
                 focusedBorder: OutlineInputBorder(
-                    borderSide:
-                        const BorderSide(color: Color(0xFF8E3D2C), width: 2),
-                    borderRadius: BorderRadius.circular(12)),
+                  borderSide:
+                      const BorderSide(color: Color(0xFF8E3D2C), width: 2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 enabledBorder: OutlineInputBorder(
-                    borderSide:
-                        const BorderSide(color: Color(0xFFB6862C), width: 1),
-                    borderRadius: BorderRadius.circular(12)),
+                  borderSide:
+                      const BorderSide(color: Color(0xFFB6862C), width: 1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -573,13 +491,15 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                 filled: true,
                 fillColor: const Color(0xFFFFF2D5),
                 focusedBorder: OutlineInputBorder(
-                    borderSide:
-                        const BorderSide(color: Color(0xFF8E3D2C), width: 2),
-                    borderRadius: BorderRadius.circular(12)),
+                  borderSide:
+                      const BorderSide(color: Color(0xFF8E3D2C), width: 2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 enabledBorder: OutlineInputBorder(
-                    borderSide:
-                        const BorderSide(color: Color(0xFFB6862C), width: 1),
-                    borderRadius: BorderRadius.circular(12)),
+                  borderSide:
+                      const BorderSide(color: Color(0xFFB6862C), width: 1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -592,13 +512,15 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                 filled: true,
                 fillColor: const Color(0xFFFFF2D5),
                 focusedBorder: OutlineInputBorder(
-                    borderSide:
-                        const BorderSide(color: Color(0xFF8E3D2C), width: 2),
-                    borderRadius: BorderRadius.circular(12)),
+                  borderSide:
+                      const BorderSide(color: Color(0xFF8E3D2C), width: 2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 enabledBorder: OutlineInputBorder(
-                    borderSide:
-                        const BorderSide(color: Color(0xFFB6862C), width: 1),
-                    borderRadius: BorderRadius.circular(12)),
+                  borderSide:
+                      const BorderSide(color: Color(0xFFB6862C), width: 1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -611,13 +533,15 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                 filled: true,
                 fillColor: const Color(0xFFFFF2D5),
                 focusedBorder: OutlineInputBorder(
-                    borderSide:
-                        const BorderSide(color: Color(0xFF8E3D2C), width: 2),
-                    borderRadius: BorderRadius.circular(12)),
+                  borderSide:
+                      const BorderSide(color: Color(0xFF8E3D2C), width: 2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 enabledBorder: OutlineInputBorder(
-                    borderSide:
-                        const BorderSide(color: Color(0xFFB6862C), width: 1),
-                    borderRadius: BorderRadius.circular(12)),
+                  borderSide:
+                      const BorderSide(color: Color(0xFFB6862C), width: 1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
             const SizedBox(height: 20),
@@ -634,7 +558,8 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                 ),
                 child: _loadingAdd
                     ? const CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(Colors.white),
                       )
                     : Text(
                         'Save Work',
@@ -652,32 +577,12 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
-  // ======================================================================
-  // SEGMENTED BUTTON (NOT USED, LEFT AS DUMMY)
-  // ======================================================================
-  Widget _segmentedButton(String label, String value) {
-    final bool active = false;
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Center(
-          child: Text(
-            label,
-            style: GoogleFonts.poppins(
-              color: active ? Colors.white : Colors.brown,
-              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
+  // ------------ TRANSACTIONS & FEEDBACK (as before) ------------
   Widget _transactionsTab() {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _firestore
           .collection('transactions')
-          .where('projectId', isEqualTo: widget.project['id'])
+          .where('projectId', isEqualTo: _projectId)
           .orderBy('date', descending: true)
           .snapshots(),
       builder: (context, snap) {
@@ -727,7 +632,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _firestore
           .collection('feedback')
-          .where('projectId', isEqualTo: widget.project['id'])
+          .where('projectId', isEqualTo: _projectId)
           .orderBy('createdAt', descending: true)
           .snapshots(),
       builder: (context, snap) {
@@ -851,54 +756,10 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      return ConstrainedBox(
-                        constraints:
-                            BoxConstraints(minHeight: constraints.maxHeight),
-                        child: _activitiesTab(),
-                      );
-                    },
-                  ),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      return ConstrainedBox(
-                        constraints:
-                            BoxConstraints(minHeight: constraints.maxHeight),
-                        child: Column(
-                          children: [
-                            Expanded(child: _transactionsTab()),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      return ConstrainedBox(
-                        constraints:
-                            BoxConstraints(minHeight: constraints.maxHeight),
-                        child: Column(
-                          children: [
-                            Expanded(child: _billsTab()),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      return ConstrainedBox(
-                        constraints:
-                            BoxConstraints(minHeight: constraints.maxHeight),
-                        child: Column(
-                          children: [
-                            Expanded(child: _feedbackTab()),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
+                  _activitiesTab(),
+                  _transactionsTab(),
+                  _billsTab(),
+                  _feedbackTab(),
                 ],
               ),
             ),
@@ -911,7 +772,6 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
 
 class _TabBarDelegate extends SliverPersistentHeaderDelegate {
   final TabBar _tabBar;
-
   _TabBarDelegate(this._tabBar);
 
   @override
