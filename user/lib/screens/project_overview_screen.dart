@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-
+import 'project_chat_section.dart';
 import '/services/cloudinary_service.dart';
 
 class ProjectOverviewScreen extends StatefulWidget {
@@ -628,55 +628,11 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
+// ------------ FEEDBACK TAB (Now Chat) ------------
   Widget _feedbackTab() {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _firestore
-          .collection('feedback')
-          .where('projectId', isEqualTo: _projectId)
-          .orderBy('createdAt', descending: true)
-          .snapshots(),
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final docs = snap.data?.docs ?? [];
-
-        if (docs.isEmpty) {
-          return Center(
-            child: Text('No feedback yet',
-                style: GoogleFonts.poppins(color: Colors.grey)),
-          );
-        }
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          itemBuilder: (context, i) {
-            final d = docs[i].data();
-            return Card(
-              elevation: 1,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: const BorderSide(color: Color(0xFFB6862C), width: 1),
-              ),
-              margin: const EdgeInsets.symmetric(vertical: 8),
-              child: ListTile(
-                title: Text(
-                  d['author'] ?? 'User',
-                  style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF6A1F1A)),
-                ),
-                subtitle: Text(
-                  d['message'] ?? '',
-                  style: GoogleFonts.poppins(color: Colors.brown),
-                ),
-              ),
-            );
-          },
-        );
-      },
+    return ProjectChatSection(
+      projectId: _projectId,
+      currentRole: 'user', 
     );
   }
 
@@ -705,6 +661,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     final projectName = widget.project['place'] ?? 'Project';
 
     return Scaffold(
+      backgroundColor: const Color(0xFFFFF7E8),
       body: SafeArea(
         bottom: false,
         child: CustomScrollView(

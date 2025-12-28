@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-
+import 'project_chat_section.dart';
 class OngoingTempleDetailScreen extends StatefulWidget {
   final Map<String, dynamic> temple;
   final void Function(Map<String, dynamic>?) onUpdated;
@@ -123,14 +123,20 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
             ),
           ),
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-              children: [
-                if (selectedTab == 0) ..._buildActivitiesTab(),
-                if (selectedTab == 1) ..._buildTransactionsTab(),
-                if (selectedTab == 2) ..._buildSuggestionsTab(),
-              ],
-            ),
+            child: selectedTab == 2
+                // IF Feedback tab is selected, show the Chat
+                ? ProjectChatSection(
+                    projectId: temple['id'],
+                    currentRole: 'admin',
+                  )
+                // ELSE show the normal scrolling list for other tabs
+                : ListView(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                    children: [
+                      if (selectedTab == 0) ..._buildActivitiesTab(),
+                      if (selectedTab == 1) ..._buildTransactionsTab(),
+                    ],
+                  ),
           ),
         ],
       ),
