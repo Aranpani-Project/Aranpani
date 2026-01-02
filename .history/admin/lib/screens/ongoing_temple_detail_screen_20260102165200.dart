@@ -171,10 +171,9 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
           return Center(child: Text("Error: ${snapshot.error}"));
         }
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-              child: CircularProgressIndicator(color: primaryMaroon));
+          return const Center(child: CircularProgressIndicator(color: primaryMaroon));
         }
-
+        
         final docs = snapshot.data?.docs ?? [];
 
         if (docs.isEmpty) {
@@ -197,10 +196,8 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
               ),
               child: ExpansionTile(
                 title: Text(data['title'] ?? 'Work Request',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, color: darkMaroonText)),
-                subtitle: Text(
-                    '₹${data['amount']} • Status: ${status.toString().toUpperCase()}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: darkMaroonText)),
+                subtitle: Text('₹${data['amount']} • Status: ${status.toString().toUpperCase()}',
                     style: TextStyle(
                         color: status == 'paid' ? Colors.green : Colors.orange,
                         fontWeight: FontWeight.w600)),
@@ -211,32 +208,25 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('UPI ID: ${data['upiId'] ?? 'Not provided'}',
-                            style: const TextStyle(
-                                fontSize: 15, fontWeight: FontWeight.w500)),
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
                         const SizedBox(height: 12),
-                        if (data['qrUrl'] != null &&
-                            data['qrUrl'].toString().isNotEmpty)
+                        if (data['qrUrl'] != null && data['qrUrl'].toString().isNotEmpty)
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text('Payment QR (Tap to expand):',
-                                  style: TextStyle(
-                                      color: Colors.grey, fontSize: 13)),
+                                  style: TextStyle(color: Colors.grey, fontSize: 13)),
                               const SizedBox(height: 8),
                               GestureDetector(
-                                onTap: () =>
-                                    _showFullScreenImage(data['qrUrl']),
+                                onTap: () => _showFullScreenImage(data['qrUrl']),
                                 child: Center(
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
                                     child: Image.network(
-                                      data['qrUrl'],
-                                      height: 150,
+                                      data['qrUrl'], 
+                                      height: 150, 
                                       fit: BoxFit.contain,
-                                      errorBuilder:
-                                          (context, error, stackTrace) =>
-                                              const Icon(Icons.broken_image,
-                                                  size: 50),
+                                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, size: 50),
                                     ),
                                   ),
                                 ),
@@ -249,28 +239,24 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                             children: [
                               ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green),
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
                                 onPressed: () async {
                                   await FirebaseFirestore.instance
                                       .collection('transactions')
                                       .doc(docId)
                                       .update({'status': 'paid'});
                                 },
-                                child: const Text('Approve / Paid',
-                                    style: TextStyle(color: Colors.white)),
+                                child: const Text('Approve / Paid', style: TextStyle(color: Colors.white)),
                               ),
                               ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.red),
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
                                 onPressed: () async {
                                   await FirebaseFirestore.instance
                                       .collection('transactions')
                                       .doc(docId)
                                       .update({'status': 'rejected'});
                                 },
-                                child: const Text('Reject',
-                                    style: TextStyle(color: Colors.white)),
+                                child: const Text('Reject', style: TextStyle(color: Colors.white)),
                               ),
                             ],
                           )
@@ -292,18 +278,12 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
       padding: const EdgeInsets.all(20.0),
       children: [
         const Text('Budget Utilization',
-            style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: darkMaroonText)),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: darkMaroonText)),
         const SizedBox(height: 20),
         _buildBudgetCard(),
         const SizedBox(height: 24),
         const Text('Bills Uploaded from Site',
-            style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: darkMaroonText)),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: darkMaroonText)),
         const SizedBox(height: 12),
         StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
@@ -313,8 +293,7 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
           builder: (context, snapshot) {
             if (snapshot.hasError) return Text("Error: ${snapshot.error}");
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                  child: CircularProgressIndicator(color: primaryMaroon));
+              return const Center(child: CircularProgressIndicator(color: primaryMaroon));
             }
             if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
               return _buildEmptyState("No bills found for this project.");
@@ -339,11 +318,8 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(color: Colors.grey.shade300)),
       child: ExpansionTile(
-        title: Text(bill['title'] ?? 'New Bill',
-            style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text('Amount: ₹${bill['amount']}',
-            style: const TextStyle(
-                color: Colors.green, fontWeight: FontWeight.bold)),
+        title: Text(bill['title'] ?? 'New Bill', style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text('Amount: ₹${bill['amount']}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
         children: [
           if (images.isNotEmpty)
             Padding(
@@ -361,8 +337,7 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                         onTap: () => _showFullScreenImage(imageUrl),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          child: Image.network(imageUrl,
-                              width: 100, height: 100, fit: BoxFit.cover),
+                          child: Image.network(imageUrl, width: 100, height: 100, fit: BoxFit.cover),
                         ),
                       ),
                     );
@@ -388,17 +363,11 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: const [
               Text('Total Budget', style: TextStyle(color: Colors.grey)),
-              Text('₹5,00,000',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold, color: primaryMaroon)),
+              Text('₹5,00,000', style: TextStyle(fontWeight: FontWeight.bold, color: primaryMaroon)),
             ],
           ),
           const SizedBox(height: 12),
-          const LinearProgressIndicator(
-              value: 0.6,
-              backgroundColor: backgroundCream,
-              color: primaryGold,
-              minHeight: 8),
+          const LinearProgressIndicator(value: 0.6, backgroundColor: backgroundCream, color: primaryGold, minHeight: 8),
         ],
       ),
     );
@@ -407,10 +376,8 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
   Widget _buildEmptyState(String msg) {
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.circular(12)),
-      child:
-          Center(child: Text(msg, style: const TextStyle(color: Colors.grey))),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      child: Center(child: Text(msg, style: const TextStyle(color: Colors.grey))),
     );
   }
 }

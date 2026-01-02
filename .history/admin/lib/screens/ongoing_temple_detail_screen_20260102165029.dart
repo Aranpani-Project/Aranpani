@@ -122,7 +122,7 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
   Widget _buildCurrentTabContent() {
     switch (selectedTab) {
       case 1:
-        return _buildFinancesTab(); // Fixed Finance Logic
+        return _buildFinancesTab(); // New Integrated Transaction Logic
       case 2:
         return _buildPaymentProcessTab();
       case 3:
@@ -151,7 +151,7 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
             style: TextStyle(
               color: isActive ? primaryMaroon : Colors.grey,
               fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-              fontSize: 11,
+              fontSize: 11, // Adjusted for 4 tabs
             ),
           ),
         ),
@@ -159,22 +159,19 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
     );
   }
 
-  // --- RE-BUILT FINANCES TAB (TRANSACTION LOGIC) ---
+  // --- NEW INTEGRATED FINANCES TAB (TRANSACTIONS) ---
   Widget _buildFinancesTab() {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection('transactions')
           .where('projectId', isEqualTo: temple['id'])
+          .orderBy('date', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(child: Text("Error: ${snapshot.error}"));
-        }
+        if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-              child: CircularProgressIndicator(color: primaryMaroon));
+          return const Center(child: CircularProgressIndicator(color: primaryMaroon));
         }
-
         final docs = snapshot.data?.docs ?? [];
 
         if (docs.isEmpty) {
@@ -196,11 +193,9 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                 side: BorderSide(color: Colors.grey.shade300),
               ),
               child: ExpansionTile(
-                title: Text(data['title'] ?? 'Work Request',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, color: darkMaroonText)),
-                subtitle: Text(
-                    '₹${data['amount']} • Status: ${status.toString().toUpperCase()}',
+                title: Text(data['title'] ?? 'Request',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: darkMaroonText)),
+                subtitle: Text('₹${data['amount']} • Status: $status',
                     style: TextStyle(
                         color: status == 'paid' ? Colors.green : Colors.orange,
                         fontWeight: FontWeight.w600)),
@@ -211,66 +206,50 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('UPI ID: ${data['upiId'] ?? 'Not provided'}',
-                            style: const TextStyle(
-                                fontSize: 15, fontWeight: FontWeight.w500)),
+                            style: const TextStyle(fontSize: 15)),
                         const SizedBox(height: 12),
-                        if (data['qrUrl'] != null &&
-                            data['qrUrl'].toString().isNotEmpty)
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Payment QR (Tap to expand):',
-                                  style: TextStyle(
-                                      color: Colors.grey, fontSize: 13)),
-                              const SizedBox(height: 8),
-                              GestureDetector(
-                                onTap: () =>
-                                    _showFullScreenImage(data['qrUrl']),
-                                child: Center(
+                        if (data['qrUrl'] != null)
+                          GestureDetector(
+                            onTap: () => _showFullScreenImage(data['qrUrl']),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Payment QR (Tap to expand):',
+                                    style: TextStyle(color: Colors.grey, fontSize: 13)),
+                                const SizedBox(height: 8),
+                                Center(
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
-                                    child: Image.network(
-                                      data['qrUrl'],
-                                      height: 150,
-                                      fit: BoxFit.contain,
-                                      errorBuilder:
-                                          (context, error, stackTrace) =>
-                                              const Icon(Icons.broken_image,
-                                                  size: 50),
-                                    ),
+                                    child: Image.network(data['qrUrl'], height: 180, fit: BoxFit.cover),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 15),
                         if (status == 'pending')
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                             children: [
                               ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green),
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
                                 onPressed: () async {
                                   await FirebaseFirestore.instance
                                       .collection('transactions')
                                       .doc(docId)
                                       .update({'status': 'paid'});
                                 },
-                                child: const Text('Approve / Paid',
-                                    style: TextStyle(color: Colors.white)),
+                                child: const Text('Approve / Paid', style: TextStyle(color: Colors.white)),
                               ),
                               ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.red),
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
                                 onPressed: () async {
                                   await FirebaseFirestore.instance
                                       .collection('transactions')
                                       .doc(docId)
                                       .update({'status': 'rejected'});
                                 },
-                                child: const Text('Reject',
-                                    style: TextStyle(color: Colors.white)),
+                                child: const Text('Reject', style: TextStyle(color: Colors.white)),
                               ),
                             ],
                           )
@@ -286,7 +265,7 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
     );
   }
 
-  // --- PAYMENT PROCESS TAB ---
+  // --- PAYMENT PROCESS TAB (Bills Section) ---
   Widget _buildPaymentProcessTab() {
     return ListView(
       padding: const EdgeInsets.all(20.0),
@@ -313,12 +292,12 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
           builder: (context, snapshot) {
             if (snapshot.hasError) return Text("Error: ${snapshot.error}");
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                  child: CircularProgressIndicator(color: primaryMaroon));
+              return const Center(child: CircularProgressIndicator(color: primaryMaroon));
             }
             if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
               return _buildEmptyState("No bills found for this project.");
             }
+
             return Column(
               children: snapshot.data!.docs.map((doc) {
                 final bill = doc.data() as Map<String, dynamic>;
@@ -361,8 +340,7 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                         onTap: () => _showFullScreenImage(imageUrl),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          child: Image.network(imageUrl,
-                              width: 100, height: 100, fit: BoxFit.cover),
+                          child: Image.network(imageUrl, width: 100, height: 100, fit: BoxFit.cover),
                         ),
                       ),
                     );
@@ -409,8 +387,7 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
           color: Colors.white, borderRadius: BorderRadius.circular(12)),
-      child:
-          Center(child: Text(msg, style: const TextStyle(color: Colors.grey))),
+      child: Center(child: Text(msg, style: const TextStyle(color: Colors.grey))),
     );
   }
 }

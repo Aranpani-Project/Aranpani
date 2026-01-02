@@ -29,10 +29,6 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
   // Gemini API Key
   final String _geminiApiKey = "AIzaSyC7rjITsgx4nG4-a3tA9dDkWUW2uP7HRI4";
 
-  // Theme Colors
-  static const Color primaryMaroon = Color(0xFF6A1F1A);
-  static const Color backgroundCream = Color(0xFFFFF7E8);
-
   // Activities form controllers
   final TextEditingController _godNameController = TextEditingController();
   final TextEditingController _peopleController = TextEditingController();
@@ -179,8 +175,8 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: backgroundCream,
-          title: Text('Request Amount', style: GoogleFonts.poppins(color: primaryMaroon)),
+          backgroundColor: const Color(0xFFFFF7E8),
+          title: Text('Request Amount', style: GoogleFonts.poppins(color: const Color(0xFF6A1F1A))),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -197,7 +193,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                   icon: const Icon(Icons.qr_code),
                   label: const Text('Upload QR Code'),
                 ),
-                if (qrFile != null) const Text('QR selected', style: TextStyle(color: Colors.green)),
+                if (qrFile != null) Text('QR selected', style: TextStyle(color: Colors.green)),
               ],
             ),
           ),
@@ -246,12 +242,14 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
               if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
               final docs = snapshot.data!.docs;
               return ListView.builder(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 itemCount: docs.length,
                 itemBuilder: (context, i) {
                   final bill = docs[i].data();
                   final imageUrls = (bill['imageUrls'] as List? ?? []);
+                  
                   return Card(
+                    margin: const EdgeInsets.only(bottom: 10),
                     child: ExpansionTile(
                       title: Text(bill['title'] ?? 'Bill', style: const TextStyle(fontWeight: FontWeight.bold)),
                       subtitle: Text('Amount: ₹${bill['amount'] ?? '0'}'),
@@ -260,17 +258,34 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                           Padding(
                             padding: const EdgeInsets.all(12.0),
                             child: Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: imageUrls.map((url) => GestureDetector(
-                                onTap: () => _showFullScreenImage(url.toString()),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(url.toString(), width: 80, height: 80, fit: BoxFit.cover),
-                                ),
-                              )).toList(),
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: imageUrls.map((url) {
+                                return GestureDetector(
+                                  onTap: () => _showFullScreenImage(url.toString()),
+                                  child: Hero(
+                                    tag: url.toString(),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.network(
+                                        url.toString(),
+                                        width: 80,
+                                        height: 80,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) => 
+                                          const Icon(Icons.broken_image, size: 40),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
                             ),
                           )
+                        else
+                          const Padding(
+                            padding: EdgeInsets.all(12.0),
+                            child: Text("No images uploaded for this bill."),
+                          ),
                       ],
                     ),
                   );
@@ -283,9 +298,13 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
-  Future<void> _showUploadBillDialog() async {}
+  Future<void> _showUploadBillDialog() async {
+    // Placeholder as per user's current code
+  }
 
-  Widget _activitiesTab() => _activitiesTabUI();
+  Widget _activitiesTab() {
+    return _activitiesTabUI(); 
+  }
 
   Widget _activitiesTabUI() {
     return Padding(
@@ -338,7 +357,9 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
-  Widget _feedbackTab() => ProjectChatSection(projectId: _projectId, currentRole: 'user');
+  Widget _feedbackTab() {
+    return ProjectChatSection(projectId: _projectId, currentRole: 'user');
+  }
 
   SliverPersistentHeader _buildTabBar() {
     return SliverPersistentHeader(
@@ -361,36 +382,11 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: backgroundCream,
+      backgroundColor: const Color(0xFFFFF7E8),
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
-            // --- UPDATED HEADER WITH BACK BUTTON ---
-            SliverToBoxAdapter(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-                color: primaryMaroon,
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Project Overview',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            SliverToBoxAdapter(child: Container(height: 100, color: const Color(0xFF6A1F1A))),
             _buildTabBar(),
             SliverFillRemaining(
               child: TabBarView(
