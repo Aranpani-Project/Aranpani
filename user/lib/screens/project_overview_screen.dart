@@ -1,13 +1,11 @@
 import 'dart:io';
-import 'dart:convert';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
-import 'project_chat_section.dart';
-import '/services/cloudinary_service.dart';
+import 'project_chat_section.dart'; 
+import '../services/cloudinary_service.dart';
 
 class ProjectOverviewScreen extends StatefulWidget {
   final Map<String, dynamic> project;
@@ -22,29 +20,14 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
   final _firestore = FirebaseFirestore.instance;
 
   late TabController _tabController;
-  bool _loadingAdd = false;
-
   final ImagePicker _picker = ImagePicker();
-
-  // Gemini API Key
-  final String _geminiApiKey = "AIzaSyC7rjITsgx4nG4-a3tA9dDkWUW2uP7HRI4";
 
   // Theme Colors
   static const Color primaryMaroon = Color(0xFF6A1F1A);
   static const Color backgroundCream = Color(0xFFFFF7E8);
 
-  // Activities form controllers
-  final TextEditingController _godNameController = TextEditingController();
-  final TextEditingController _peopleController = TextEditingController();
-  final TextEditingController _donationController = TextEditingController();
-  final TextEditingController _billingController = TextEditingController();
-  String _workPart = 'lingam';
-
   String get _projectId => widget.project['id'] as String;
   String get _userId => (widget.project['userId'] ?? '') as String;
-
-  CollectionReference<Map<String, dynamic>> get _activitiesRef =>
-      _firestore.collection('activities');
 
   CollectionReference<Map<String, dynamic>> get _billsRef =>
       _firestore.collection('bills');
@@ -53,17 +36,17 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    _loadLatestActivity();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
-    _godNameController.dispose();
-    _peopleController.dispose();
-    _donationController.dispose();
-    _billingController.dispose();
     super.dispose();
+  }
+
+  // Helper to format date as YYYY-MM-DD
+  String _formatDate(DateTime date) {
+    return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
   }
 
   void _showFullScreenImage(String imageUrl) {
@@ -81,10 +64,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
               maxScale: 4.0,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  imageUrl,
-                  fit: BoxFit.contain,
-                ),
+                child: Image.network(imageUrl, fit: BoxFit.contain),
               ),
             ),
             Positioned(
@@ -104,76 +84,11 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
-  Future<void> _deleteBill(String docId) async {
-    try {
-      await _billsRef.doc(docId).delete();
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Bill deleted successfully')));
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Delete failed: $e')));
-    }
-  }
-
-  Future<Map<String, dynamic>?> _extractBillData(File imageFile) async {
-    try {
-      final model = GenerativeModel(model: 'gemini-1.5-flash', apiKey: _geminiApiKey);
-      final bytes = await imageFile.readAsBytes();
-      final prompt = TextPart("Extract Merchant Name and Total Amount as JSON: {'name': 'String', 'amount': double}");
-      final response = await model.generateContent([
-        Content.multi([prompt, DataPart('image/jpeg', bytes)])
-      ]);
-      final text = response.text ?? "{}";
-      final cleanJson = text.replaceAll('```json', '').replaceAll('```', '').trim();
-      return jsonDecode(cleanJson);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  Future<void> _loadLatestActivity() async {
-    try {
-      final snap = await _activitiesRef
-          .where('projectId', isEqualTo: _projectId)
-          .orderBy('createdAt', descending: true)
-          .limit(1)
-          .get();
-      if (snap.docs.isEmpty) return;
-      final data = snap.docs.first.data();
-      setState(() {
-        _godNameController.text = data['godName'] ?? '';
-        _peopleController.text = data['peopleVisited'] ?? '';
-        _workPart = (data['workPart'] ?? 'lingam') as String;
-      });
-    } catch (_) {}
-  }
-
-  Future<void> _submitActivityForm() async {
-    final godName = _godNameController.text.trim();
-    if (godName.isEmpty) return;
-    setState(() => _loadingAdd = true);
-    try {
-      await _activitiesRef.add({
-        'userId': _userId,
-        'projectId': _projectId,
-        'godName': godName,
-        'workPart': _workPart,
-        'peopleVisited': _peopleController.text.trim(),
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Work details saved')));
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
-    } finally {
-      if (mounted) setState(() => _loadingAdd = false);
-    }
-  }
-
   Future<void> _showRequestAmountDialog() async {
     final titleCtrl = TextEditingController();
     final amountCtrl = TextEditingController();
     final upiCtrl = TextEditingController();
-    File? qrFile;
+    XFile? qrFile;
 
     await showDialog(
       context: context,
@@ -192,7 +107,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                 ElevatedButton.icon(
                   onPressed: () async {
                     final img = await _picker.pickImage(source: ImageSource.gallery);
-                    if (img != null) setDialogState(() => qrFile = File(img.path));
+                    if (img != null) setDialogState(() => qrFile = img);
                   },
                   icon: const Icon(Icons.qr_code),
                   label: const Text('Upload QR Code'),
@@ -230,12 +145,104 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
+  Future<DateTime?> _pickDate(BuildContext context) async {
+    return await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2030),
+    );
+  }
+
+  Future<void> _showAddWorkDialog() async {
+    final TextEditingController nameCtrl = TextEditingController();
+    DateTime? fromDate;
+    DateTime? toDate;
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              backgroundColor: backgroundCream,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+              title: Text('Add New Work', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: primaryMaroon)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Work Name',
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  ListTile(
+                    tileColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    title: Text(fromDate == null ? 'From Date' : '${fromDate!.day}/${fromDate!.month}/${fromDate!.year}'),
+                    trailing: const Icon(Icons.calendar_today, color: primaryMaroon),
+                    onTap: () async {
+                      final picked = await _pickDate(context);
+                      if (picked != null) setStateDialog(() => fromDate = picked);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    tileColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    title: Text(toDate == null ? 'To Date' : '${toDate!.day}/${toDate!.month}/${toDate!.year}'),
+                    trailing: const Icon(Icons.event, color: primaryMaroon),
+                    onTap: () async {
+                      final picked = await _pickDate(context);
+                      if (picked != null) setStateDialog(() => toDate = picked);
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: primaryMaroon),
+                  onPressed: () async {
+                    if (nameCtrl.text.isEmpty || fromDate == null || toDate == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all fields')));
+                      return;
+                    }
+                    await _firestore.collection('project_tasks').add({
+                      'projectId': _projectId,
+                      'taskName': nameCtrl.text,
+                      'fromDate': fromDate,
+                      'toDate': toDate,
+                      'status': 'todo',
+                      'createdAt': FieldValue.serverTimestamp(),
+                    });
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Work Added Successfully!')));
+                  },
+                  child: const Text('Add Work', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _billsTab() {
     return Column(
       children: [
         const SizedBox(height: 16),
         ElevatedButton.icon(
-          onPressed: _showUploadBillDialog,
+          onPressed: _showUploadBillDialog, 
           icon: const Icon(Icons.upload),
           label: const Text("Upload Bill"),
         ),
@@ -285,18 +292,175 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
 
   Future<void> _showUploadBillDialog() async {}
 
-  Widget _activitiesTab() => _activitiesTabUI();
-
-  Widget _activitiesTabUI() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
+  Widget _activitiesTab() {
+    return DefaultTabController(
+      length: 3,
       child: Column(
         children: [
-          TextField(controller: _godNameController, decoration: const InputDecoration(labelText: 'God Name')),
-          const SizedBox(height: 20),
-          ElevatedButton(onPressed: _submitActivityForm, child: const Text('Save')),
+          Container(
+            color: Colors.white,
+            child: const TabBar(
+              labelColor: primaryMaroon,
+              unselectedLabelColor: Colors.grey,
+              indicatorColor: primaryMaroon,
+              tabs: [
+                Tab(text: "To Do"),
+                Tab(text: "Ongoing"),
+                Tab(text: "Completed"),
+              ],
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _buildTodoList(),    
+                _buildOngoingList(),
+                _buildCompletedList(), 
+              ],
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTodoList() {
+    return Stack(
+      children: [
+        StreamBuilder<QuerySnapshot>(
+          stream: _firestore
+              .collection('project_tasks')
+              .where('projectId', isEqualTo: _projectId)
+              .where('status', isEqualTo: 'todo')
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+            final docs = snapshot.data!.docs;
+
+            if (docs.isEmpty) {
+              return Center(child: Text("No works to be done", style: GoogleFonts.poppins(color: Colors.grey)));
+            }
+
+            return ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 80), 
+              itemCount: docs.length,
+              itemBuilder: (context, index) {
+                final data = docs[index].data() as Map<String, dynamic>;
+                final docId = docs[index].id;
+                
+                DateTime from = DateTime.now();
+                if (data['fromDate'] != null) from = (data['fromDate'] as Timestamp).toDate();
+                DateTime to = DateTime.now();
+                if (data['toDate'] != null) to = (data['toDate'] as Timestamp).toDate();
+
+                return TodoTaskCard(
+                  taskId: docId,
+                  taskName: data['taskName'] ?? 'Unknown Work',
+                  fromDate: _formatDate(from),
+                  toDate: _formatDate(to),
+                  userId: _userId,
+                  projectId: _projectId,
+                );
+              },
+            );
+          },
+        ),
+
+        Positioned(
+          bottom: 20,
+          right: 20,
+          child: FloatingActionButton.extended(
+            backgroundColor: primaryMaroon,
+            onPressed: _showAddWorkDialog,
+            icon: const Icon(Icons.add, color: Colors.white),
+            label: const Text("Add Work", style: TextStyle(color: Colors.white)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // --- 2. Ongoing List ---
+  Widget _buildOngoingList() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('project_tasks')
+          .where('projectId', isEqualTo: _projectId)
+          .where('status', whereIn: ['ongoing', 'pending_approval']) 
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        final docs = snapshot.data!.docs;
+
+        if (docs.isEmpty) {
+          return Center(child: Text("No ongoing works", style: GoogleFonts.poppins(color: Colors.grey)));
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final data = docs[index].data() as Map<String, dynamic>;
+            final docId = docs[index].id;
+            final status = data['status'] ?? 'ongoing';
+            
+            DateTime from = DateTime.now();
+            if (data['fromDate'] != null) from = (data['fromDate'] as Timestamp).toDate();
+            DateTime to = DateTime.now();
+            if (data['toDate'] != null) to = (data['toDate'] as Timestamp).toDate();
+
+            return OngoingTaskCard(
+              taskId: docId,
+              taskName: data['taskName'] ?? 'Unknown Work',
+              fromDate: _formatDate(from),
+              toDate: _formatDate(to),
+              userId: _userId,
+              projectId: _projectId,
+              currentStatus: status, 
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // --- 3. Completed List (FIX: Deleted Icon Removed) ---
+  Widget _buildCompletedList() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('project_tasks')
+          .where('projectId', isEqualTo: _projectId)
+          .where('status', isEqualTo: 'completed')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        final docs = snapshot.data!.docs;
+
+        if (docs.isEmpty) {
+          return Center(child: Text("No completed works", style: GoogleFonts.poppins(color: Colors.grey)));
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final data = docs[index].data() as Map<String, dynamic>;
+            
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: ListTile(
+                leading: const Icon(Icons.check_circle, color: Colors.green),
+                title: Text(
+                  data['taskName'] ?? '', 
+                  style: const TextStyle(fontWeight: FontWeight.bold) 
+                ),
+                subtitle: const Text("Work Completed"),
+                trailing: const Icon(Icons.verified, color: Colors.blue), // Replaced delete with verified icon
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -365,7 +529,6 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
-            // --- UPDATED HEADER WITH BACK BUTTON ---
             SliverToBoxAdapter(
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
@@ -418,4 +581,341 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
   }
   @override
   bool shouldRebuild(covariant _TabBarDelegate oldDelegate) => false;
+}
+
+// =========================================================
+// 1. TODO TASK CARD
+// =========================================================
+class TodoTaskCard extends StatefulWidget {
+  final String taskId;
+  final String taskName;
+  final String fromDate;
+  final String toDate;
+  final String userId;
+  final String projectId;
+
+  const TodoTaskCard({
+    super.key,
+    required this.taskId,
+    required this.taskName,
+    required this.fromDate,
+    required this.toDate,
+    required this.userId,
+    required this.projectId,
+  });
+
+  @override
+  State<TodoTaskCard> createState() => _TodoTaskCardState();
+}
+
+class _TodoTaskCardState extends State<TodoTaskCard> {
+  final ImagePicker _picker = ImagePicker();
+  List<XFile> _selectedImages = [];
+  bool _isUploading = false;
+
+  Future<void> _pickImages() async {
+    final List<XFile> images = await _picker.pickMultiImage(limit: 5); 
+    if (images.isNotEmpty) {
+      if (images.length > 5) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Maximum 5 images allowed")));
+        setState(() => _selectedImages = images.sublist(0, 5));
+      } else {
+        setState(() => _selectedImages = images);
+      }
+    }
+  }
+
+  Future<void> _deleteTask() async {
+    bool confirm = await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Delete Work"),
+        content: const Text("Are you sure you want to delete this work?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Delete", style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    ) ?? false;
+
+    if (confirm) {
+      await FirebaseFirestore.instance.collection('project_tasks').doc(widget.taskId).delete();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Work deleted")));
+    }
+  }
+
+  Future<void> _startTask() async {
+    if (_selectedImages.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please upload progress photos first")));
+      return;
+    }
+    setState(() => _isUploading = true);
+    try {
+      List<String> uploadedUrls = [];
+      for (var image in _selectedImages) {
+        String? url = await CloudinaryService.uploadImage(imageFile: image, userId: widget.userId, projectId: widget.projectId);
+        if (url != null) uploadedUrls.add(url);
+      }
+      await FirebaseFirestore.instance.collection('project_tasks').doc(widget.taskId).update({
+        'status': 'ongoing',
+        'startImages': uploadedUrls,
+        'startedAt': FieldValue.serverTimestamp(),
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Work Started! Moved to Ongoing.")));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(child: Text(widget.taskName, style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.black87))),
+                IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: _deleteTask),
+              ],
+            ),
+            Text("${widget.fromDate} to ${widget.toDate}", style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600])),
+            const SizedBox(height: 16),
+            Text("Upload Progress Photo:", style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                ElevatedButton(
+                  onPressed: _pickImages,
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0E0E0), foregroundColor: Colors.black, elevation: 0),
+                  child: const Text("Choose File"),
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: Text(_selectedImages.isEmpty ? "No file chosen" : "${_selectedImages.length} files selected", style: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 13), overflow: TextOverflow.ellipsis)),
+              ],
+            ),
+            if (_selectedImages.isNotEmpty) 
+              Padding(
+                padding: const EdgeInsets.only(top: 10), 
+                child: Wrap(
+                  spacing: 8, 
+                  children: _selectedImages.map((img) => 
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4), 
+                      child: kIsWeb 
+                          ? Image.network(img.path, width: 50, height: 50, fit: BoxFit.cover) 
+                          : Image.file(File(img.path), width: 50, height: 50, fit: BoxFit.cover)
+                    )
+                  ).toList()
+                )
+              ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 45,
+              child: ElevatedButton(
+                onPressed: _isUploading ? null : _startTask,
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4285F4), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)), elevation: 0),
+                child: _isUploading 
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : Text("Start", style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// =========================================================
+// 2. ONGOING TASK CARD (With "Send for Approval" Logic)
+// =========================================================
+class OngoingTaskCard extends StatefulWidget {
+  final String taskId;
+  final String taskName;
+  final String fromDate;
+  final String toDate;
+  final String userId;
+  final String projectId;
+  final String currentStatus;
+
+  const OngoingTaskCard({
+    super.key,
+    required this.taskId,
+    required this.taskName,
+    required this.fromDate,
+    required this.toDate,
+    required this.userId,
+    required this.projectId,
+    required this.currentStatus,
+  });
+
+  @override
+  State<OngoingTaskCard> createState() => _OngoingTaskCardState();
+}
+
+class _OngoingTaskCardState extends State<OngoingTaskCard> {
+  final ImagePicker _picker = ImagePicker();
+  List<XFile> _selectedImages = [];
+  bool _isUploading = false;
+
+  Future<void> _pickImages() async {
+    final List<XFile> images = await _picker.pickMultiImage(limit: 5); 
+    if (images.isNotEmpty) {
+      if (images.length > 5) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Maximum 5 images allowed")));
+        setState(() => _selectedImages = images.sublist(0, 5));
+      } else {
+        setState(() => _selectedImages = images);
+      }
+    }
+  }
+
+  Future<void> _deleteTask() async {
+    bool confirm = await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Delete Work"),
+        content: const Text("Are you sure you want to delete this work?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Delete", style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    ) ?? false;
+    if (confirm) {
+      await FirebaseFirestore.instance.collection('project_tasks').doc(widget.taskId).delete();
+    }
+  }
+
+  // --- SEND FOR APPROVAL ---
+  Future<void> _sendForApproval() async {
+    setState(() => _isUploading = true);
+    try {
+      List<String> uploadedUrls = [];
+      if (_selectedImages.isNotEmpty) {
+        for (var image in _selectedImages) {
+          String? url = await CloudinaryService.uploadImage(imageFile: image, userId: widget.userId, projectId: widget.projectId);
+          if (url != null) uploadedUrls.add(url);
+        }
+      }
+      
+      // Update status to 'pending_approval'
+      await FirebaseFirestore.instance.collection('project_tasks').doc(widget.taskId).update({
+        'status': 'pending_approval',
+        'endImages': uploadedUrls,
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Sent for approval!")));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    bool isPending = widget.currentStatus == 'pending_approval';
+
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(child: Text(widget.taskName, style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.black87))),
+                IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: _deleteTask),
+              ],
+            ),
+            Text("${widget.fromDate} to ${widget.toDate}", style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600])),
+            const SizedBox(height: 16),
+            
+            if (!isPending) ...[
+              Text("Upload Completion Photo (Optional):", style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  ElevatedButton(
+                    onPressed: _pickImages,
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0E0E0), foregroundColor: Colors.black, elevation: 0),
+                    child: const Text("Choose File"),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(_selectedImages.isEmpty ? "No file chosen" : "${_selectedImages.length} files selected", style: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 13), overflow: TextOverflow.ellipsis)),
+                ],
+              ),
+              if (_selectedImages.isNotEmpty) 
+                Padding(
+                  padding: const EdgeInsets.only(top: 10), 
+                  child: Wrap(
+                    spacing: 8, 
+                    children: _selectedImages.map((img) => 
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4), 
+                        child: kIsWeb 
+                            ? Image.network(img.path, width: 50, height: 50, fit: BoxFit.cover)
+                            : Image.file(File(img.path), width: 50, height: 50, fit: BoxFit.cover)
+                      )
+                    ).toList()
+                  )
+                ),
+              const SizedBox(height: 16),
+            ] else ...[
+               const SizedBox(height: 8),
+               Container(
+                 padding: const EdgeInsets.all(8),
+                 decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)),
+                 child: Row(
+                   children: [
+                     const Icon(Icons.lock_clock, size: 16, color: Color(0xFF6A1F1A)),
+                     const SizedBox(width: 8),
+                     const Text("Waiting for admin approval...", style: TextStyle(color: Color(0xFF6A1F1A), fontSize: 13, fontStyle: FontStyle.italic)),
+                   ],
+                 ),
+               ),
+               const SizedBox(height: 16),
+            ],
+            
+            SizedBox(
+              width: double.infinity,
+              height: 45,
+              child: ElevatedButton(
+                onPressed: (isPending || _isUploading) ? null : _sendForApproval,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isPending ? Colors.grey[300] : Colors.green, 
+                  foregroundColor: isPending ? Colors.white : Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)), 
+                  elevation: 0
+                ),
+                child: _isUploading 
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : Text(
+                      isPending ? "Pending Approval" : "Send for Approval", 
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600)
+                    ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

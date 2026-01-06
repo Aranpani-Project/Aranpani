@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart'; // IMPORTED FOR XFile
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../utils/colors.dart';
@@ -183,17 +184,23 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
 
       List<String> uploadedImageUrls = [];
 
+      // --- FIXED UPLOAD LOGIC ---
       for (final imgPath in _selectedImages) {
-        final file = File(imgPath);
+        // Create an XFile from the path string
+        final xFile = XFile(imgPath);
 
         final url = await CloudinaryService.uploadImage(
-          imageFile: file,
+          imageFile: xFile, // Pass XFile
           userId: user.uid,
           projectId: projectId,
         );
 
-        uploadedImageUrls.add(url);
+        // Check for null before adding
+        if (url != null) {
+          uploadedImageUrls.add(url);
+        }
       }
+      // --------------------------
 
       await FirebaseFirestore.instance
           .collection('projects')
