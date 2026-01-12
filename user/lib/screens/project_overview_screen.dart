@@ -44,7 +44,6 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     super.dispose();
   }
 
-  // Helper to format date as YYYY-MM-DD
   String _formatDate(DateTime date) {
     return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
   }
@@ -245,13 +244,16 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
           onPressed: _showUploadBillDialog, 
           icon: const Icon(Icons.upload),
           label: const Text("Upload Bill"),
+          style: ElevatedButton.styleFrom(backgroundColor: primaryMaroon, foregroundColor: Colors.white),
         ),
         Expanded(
           child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _billsRef.where('projectId', isEqualTo: _projectId).snapshots(),
+            stream: _billsRef.where('projectId', isEqualTo: _projectId).orderBy('createdAt', descending: true).snapshots(),
             builder: (context, snapshot) {
               if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
               final docs = snapshot.data!.docs;
+              if (docs.isEmpty) return Center(child: Text("No bills uploaded yet", style: GoogleFonts.poppins(color: Colors.grey)));
+              
               return ListView.builder(
                 padding: const EdgeInsets.all(12),
                 itemCount: docs.length,
@@ -290,7 +292,93 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
-  Future<void> _showUploadBillDialog() async {}
+  // --- UPDATED UPLOAD BILL DIALOG ---
+  Future<void> _showUploadBillDialog() async {
+    final titleCtrl = TextEditingController();
+    final amountCtrl = TextEditingController();
+    List<XFile> selectedFiles = [];
+    bool isUploading = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: backgroundCream,
+          title: Text('Upload New Bill', style: GoogleFonts.poppins(color: primaryMaroon, fontWeight: FontWeight.bold)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Bill For (Title)')),
+                TextField(controller: amountCtrl, decoration: const InputDecoration(labelText: 'Total Amount'), keyboardType: TextInputType.number),
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  onPressed: isUploading ? null : () async {
+                    final imgs = await _picker.pickMultiImage();
+                    if (imgs.isNotEmpty) setDialogState(() => selectedFiles = imgs);
+                  },
+                  icon: const Icon(Icons.image),
+                  label: Text(selectedFiles.isEmpty ? 'Select Bill Photos' : '${selectedFiles.length} Images Selected'),
+                ),
+                if (isUploading)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 20),
+                    child: CircularProgressIndicator(color: primaryMaroon),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isUploading ? null : () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: isUploading ? null : () async {
+                if (titleCtrl.text.isEmpty || amountCtrl.text.isEmpty || selectedFiles.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all fields and select images')));
+                  return;
+                }
+
+                setDialogState(() => isUploading = true);
+                try {
+                  List<String> urls = [];
+                  for (var file in selectedFiles) {
+                    String? url = await CloudinaryService.uploadImage(
+                      imageFile: file, 
+                      userId: _userId, 
+                      projectId: _projectId
+                    );
+                    if (url != null) urls.add(url);
+                  }
+
+                  await _billsRef.add({
+                    'projectId': _projectId,
+                    'userId': _userId,
+                    'title': titleCtrl.text,
+                    'amount': double.parse(amountCtrl.text),
+                    'imageUrls': urls,
+                    'createdAt': FieldValue.serverTimestamp(),
+                  });
+
+                  if (mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bill Uploaded Successfully!')));
+                  }
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+                } finally {
+                  setDialogState(() => isUploading = false);
+                }
+              },
+              child: const Text('Upload'),
+            )
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _activitiesTab() {
     return DefaultTabController(
@@ -380,7 +468,6 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
-  // --- 2. Ongoing List ---
   Widget _buildOngoingList() {
     return StreamBuilder<QuerySnapshot>(
       stream: _firestore
@@ -424,7 +511,6 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
-  // --- 3. Completed List (FIX: Deleted Icon Removed) ---
   Widget _buildCompletedList() {
     return StreamBuilder<QuerySnapshot>(
       stream: _firestore
@@ -455,7 +541,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                   style: const TextStyle(fontWeight: FontWeight.bold) 
                 ),
                 subtitle: const Text("Work Completed"),
-                trailing: const Icon(Icons.verified, color: Colors.blue), // Replaced delete with verified icon
+                trailing: const Icon(Icons.verified, color: Colors.blue),
               ),
             );
           },
@@ -738,7 +824,7 @@ class _TodoTaskCardState extends State<TodoTaskCard> {
 }
 
 // =========================================================
-// 2. ONGOING TASK CARD (With "Send for Approval" Logic)
+// 2. ONGOING TASK CARD
 // =========================================================
 class OngoingTaskCard extends StatefulWidget {
   final String taskId;
@@ -798,7 +884,6 @@ class _OngoingTaskCardState extends State<OngoingTaskCard> {
     }
   }
 
-  // --- SEND FOR APPROVAL ---
   Future<void> _sendForApproval() async {
     setState(() => _isUploading = true);
     try {
@@ -810,7 +895,6 @@ class _OngoingTaskCardState extends State<OngoingTaskCard> {
         }
       }
       
-      // Update status to 'pending_approval'
       await FirebaseFirestore.instance.collection('project_tasks').doc(widget.taskId).update({
         'status': 'pending_approval',
         'endImages': uploadedUrls,
@@ -862,57 +946,32 @@ class _OngoingTaskCardState extends State<OngoingTaskCard> {
                   Expanded(child: Text(_selectedImages.isEmpty ? "No file chosen" : "${_selectedImages.length} files selected", style: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 13), overflow: TextOverflow.ellipsis)),
                 ],
               ),
-              if (_selectedImages.isNotEmpty) 
-                Padding(
-                  padding: const EdgeInsets.only(top: 10), 
-                  child: Wrap(
-                    spacing: 8, 
-                    children: _selectedImages.map((img) => 
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4), 
-                        child: kIsWeb 
-                            ? Image.network(img.path, width: 50, height: 50, fit: BoxFit.cover)
-                            : Image.file(File(img.path), width: 50, height: 50, fit: BoxFit.cover)
-                      )
-                    ).toList()
-                  )
-                ),
               const SizedBox(height: 16),
-            ] else ...[
-               const SizedBox(height: 8),
-               Container(
-                 padding: const EdgeInsets.all(8),
-                 decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)),
-                 child: Row(
-                   children: [
-                     const Icon(Icons.lock_clock, size: 16, color: Color(0xFF6A1F1A)),
-                     const SizedBox(width: 8),
-                     const Text("Waiting for admin approval...", style: TextStyle(color: Color(0xFF6A1F1A), fontSize: 13, fontStyle: FontStyle.italic)),
-                   ],
-                 ),
-               ),
-               const SizedBox(height: 16),
-            ],
-            
-            SizedBox(
-              width: double.infinity,
-              height: 45,
-              child: ElevatedButton(
-                onPressed: (isPending || _isUploading) ? null : _sendForApproval,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isPending ? Colors.grey[300] : Colors.green, 
-                  foregroundColor: isPending ? Colors.white : Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)), 
-                  elevation: 0
+              SizedBox(
+                width: double.infinity,
+                height: 45,
+                child: ElevatedButton(
+                  onPressed: _isUploading ? null : _sendForApproval,
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)), elevation: 0),
+                  child: _isUploading 
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text("Send for Approval", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
-                child: _isUploading 
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : Text(
-                      isPending ? "Pending Approval" : "Send for Approval", 
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600)
-                    ),
               ),
-            ),
+            ] else ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+                child: const Row(
+                  children: [
+                    Icon(Icons.hourglass_bottom, color: Colors.orange),
+                    SizedBox(width: 10),
+                    Text("Pending Admin Approval", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              )
+            ],
           ],
         ),
       ),
