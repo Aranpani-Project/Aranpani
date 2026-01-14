@@ -22,9 +22,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   Map<String, dynamic>? _userData;
-  Map<String, dynamic>? _project; // single latest project
+  Map<String, dynamic>? _project; 
   bool _loading = true;
-  String? _error;
   int _currentIndex = 0;
 
   @override
@@ -46,15 +45,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
         return;
       }
 
-      final userDoc =
-          await _firestore.collection('users').doc(user.uid).get();
+      final userDoc = await _firestore.collection('users').doc(user.uid).get();
 
       final projectDocs = await _firestore
           .collection('projects')
           .where('userId', isEqualTo: user.uid)
           .orderBy('dateCreated', descending: true)
           .limit(1)
-          .get(); 
+          .get();
 
       Map<String, dynamic>? project;
       if (projectDocs.docs.isNotEmpty) {
@@ -68,10 +66,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
         _loading = false;
       });
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+      setState(() => _loading = false);
     }
   }
 
@@ -83,57 +78,30 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     if (result == true) _loadUserAndProjects();
   }
 
-  Future<void> _openProfile() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const ProfileScreen()),
-    );
-    _loadUserAndProjects();
-    setState(() => _currentIndex = 0);
-  }
+  // UPDATED LOGIC: RESTRICT ACCESS UNLESS APPROVED
+  void _handleProjectTap(Map<String, dynamic> project) {
+    final status = (project['status'] ?? 'pending').toString().toLowerCase();
 
-  Future<void> _logout() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFFFFFDF5),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: Text('Confirm Logout',
-            style: GoogleFonts.cinzel(fontWeight: FontWeight.bold, color: const Color(0xFF5D4037))),
-        content: Text('Are you sure you want to sign out?',
-            style: GoogleFonts.poppins(color: const Color(0xFF3E2723))),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancel', style: GoogleFonts.poppins(color: const Color(0xFF8D6E63))),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB71C1C)),
-            child: const Text('Sign Out', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      await _auth.signOut();
-      if (!mounted) return;
-      Navigator.pushAndRemoveUntil(
+    if (status == 'approved' || status == 'ongoing') {
+      Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => const SplashScreen()),
-        (route) => false,
+        MaterialPageRoute(
+          builder: (_) => ProjectOverviewScreen(project: project),
+        ),
+      );
+    } else {
+      // Show a polite notice that it's still pending
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Your plan is currently under review. You can access the project dashboard once it is sanctioned.',
+            style: GoogleFonts.poppins(),
+          ),
+          backgroundColor: const Color(0xFF5D4037),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     }
-  }
-
-  void _openProject(Map<String, dynamic> project) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ProjectOverviewScreen(project: project),
-      ),
-    );
   }
 
   Future<void> _deleteProject() async {
@@ -143,6 +111,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFFFFFDF5),
         title: Text('Delete plan', style: GoogleFonts.cinzel(color: const Color(0xFF5D4037))),
+        content: const Text('This will remove your proposal. This action cannot be undone.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           ElevatedButton(
@@ -198,7 +167,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       const SizedBox(height: 14),
                       _createProjectButton(),
                       const SizedBox(height: 18),
-                      _projectSection(),
+                      _projectSection(), // NEW UI HERE
                       const SizedBox(height: 80),
                     ],
                   ),
@@ -213,7 +182,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     );
   }
 
-  // UPDATED HEADER WITH YOUR LOGO
   Widget _header() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 18),
@@ -221,7 +189,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Row(children: [
-            // BRAND LOGO AS REQUESTED
             Container(
               width: 54,
               height: 54,
@@ -229,25 +196,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 shape: BoxShape.circle,
                 gradient: const LinearGradient(
                   colors: [Color(0xFFD4AF37), Color(0xFFB8962E)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
                 ),
                 boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
+                  BoxShadow(color: Colors.black12, blurRadius: 8, offset: const Offset(0, 4)),
                 ],
               ),
               child: Padding(
                 padding: const EdgeInsets.all(3),
-                child: ClipOval(
-                  child: Image.asset(
-                    'assets/images/shiva.png',
-                    fit: BoxFit.cover,
-                  ),
-                ),
+                child: ClipOval(child: Image.asset('assets/images/shiva.png', fit: BoxFit.cover)),
               ),
             ),
             const SizedBox(width: 12),
@@ -256,66 +212,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               children: [
                 Text('Aranpani',
                     style: GoogleFonts.cinzelDecorative(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFF5D4037))),
+                        fontSize: 20, fontWeight: FontWeight.bold, color: const Color(0xFF5D4037))),
                 Text('Welcome',
-                    style: GoogleFonts.poppins(
-                        color: const Color(0xFF8D6E63),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500)),
+                    style: GoogleFonts.poppins(color: const Color(0xFF8D6E63), fontSize: 12)),
               ],
             ),
           ]),
-          Row(
-            children: [
-              _notificationIcon(),
-              const SizedBox(width: 8),
-              IconButton(
-                onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-                icon: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF5D4037).withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.menu, color: Color(0xFF5D4037)),
-                ),
-              ),
-            ],
+          IconButton(
+            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+            icon: const Icon(Icons.menu, color: Color(0xFF5D4037)),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _notificationIcon() {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        IconButton(
-          icon: const Icon(Icons.notifications_none_rounded, color: Color(0xFF5D4037), size: 28),
-          onPressed: () {
-            // Navigate to notification screen
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _bottomNavBar() {
-    return BottomNavigationBar(
-      backgroundColor: const Color(0xFFFFFDF5),
-      currentIndex: _currentIndex,
-      selectedItemColor: const Color(0xFF5D4037),
-      onTap: (index) {
-        setState(() => _currentIndex = index);
-        if (index == 1) _openProfile();
-      },
-      items: const [
-        BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Home'),
-        BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'Profile'),
-      ],
     );
   }
 
@@ -341,7 +249,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   }
 
   Widget _projectHeader() {
-    return Text('Your Project',
+    return Text('My Proposal',
         style: GoogleFonts.cinzel(fontSize: 20, fontWeight: FontWeight.bold, color: const Color(0xFF3E2723)));
   }
 
@@ -352,9 +260,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       height: 56,
       child: ElevatedButton.icon(
         icon: const Icon(Icons.add_circle_outline),
-        label: Text(hasProject ? "Plan already proposed" : "Propose a plan"),
+        label: Text(hasProject ? "Plan Submitted" : "Propose a plan"),
         style: ElevatedButton.styleFrom(
-          backgroundColor: hasProject ? const Color(0xFFBCAA9B) : const Color(0xFF5D4037),
+          backgroundColor: hasProject ? Colors.grey[400] : const Color(0xFF5D4037),
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
@@ -363,21 +271,127 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     );
   }
 
+  // UPDATED UI TO SHOW PENDING VS ONGOING
   Widget _projectSection() {
-    if (_project == null) return const Center(child: Text("No plans yet."));
-    return Card(
-      color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: ListTile(
-        title: Text(_project!['place'] ?? 'Unnamed Plan'),
-        subtitle: Text('Status: ${_project!['status'] ?? 'Pending'}'),
-        trailing: IconButton(
-          icon: const Icon(Icons.delete, color: Colors.red),
-          onPressed: _deleteProject,
+    if (_project == null) return const Center(child: Text("No plans proposed yet."));
+
+    final String status = (_project!['status'] ?? 'pending').toString().toLowerCase();
+    final bool isApproved = status == 'approved' || status == 'ongoing';
+    
+    // UI Theme based on status
+    final Color statusColor = isApproved ? Colors.green.shade700 : Colors.orange.shade800;
+    final Color bgColor = isApproved ? Colors.green.shade50 : Colors.orange.shade50;
+    final IconData statusIcon = isApproved ? Icons.check_circle_rounded : Icons.hourglass_empty_rounded;
+
+    return InkWell(
+      onTap: () => _handleProjectTap(_project!),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: statusColor.withOpacity(0.3), width: 1),
+          boxShadow: [
+            BoxShadow(color: statusColor.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 8))
+          ],
         ),
-        onTap: () => _openProject(_project!),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(8)),
+                  child: Row(
+                    children: [
+                      Icon(statusIcon, size: 14, color: statusColor),
+                      const SizedBox(width: 5),
+                      Text(
+                        status.toUpperCase(),
+                        style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: statusColor),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  _project!['projectId'] ?? '',
+                  style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _project!['place'] ?? 'Unnamed Temple',
+              style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold, color: const Color(0xFF3E2723)),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.location_on, size: 14, color: Color(0xFF8D6E63)),
+                const SizedBox(width: 4),
+                Text(
+                  "${_project!['taluk']}, ${_project!['district']}",
+                  style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF8D6E63)),
+                ),
+              ],
+            ),
+            const Divider(height: 30),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Different action label based on status
+                Text(
+                  isApproved ? 'Tap to view work progress' : 'Waiting for sanction...',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12, 
+                    fontWeight: FontWeight.w500, 
+                    color: isApproved ? const Color(0xFF5D4037) : Colors.grey,
+                    fontStyle: isApproved ? FontStyle.normal : FontStyle.italic
+                  ),
+                ),
+                if (status == 'pending')
+                  IconButton(
+                    icon: const Icon(Icons.delete_sweep_outlined, color: Colors.redAccent),
+                    onPressed: _deleteProject,
+                  )
+                else
+                  const Icon(Icons.arrow_forward_ios, size: 14, color: Color(0xFF5D4037)),
+              ],
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  Widget _bottomNavBar() {
+    return BottomNavigationBar(
+      backgroundColor: const Color(0xFFFFFDF5),
+      currentIndex: _currentIndex,
+      selectedItemColor: const Color(0xFF5D4037),
+      onTap: (index) {
+        if (index == 1) _openProfile();
+        setState(() => _currentIndex = index);
+      },
+      items: const [
+        BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
+        BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+      ],
+    );
+  }
+
+  Future<void> _openProfile() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen()));
+    _loadUserAndProjects();
+    setState(() => _currentIndex = 0);
+  }
+
+  Future<void> _logout() async {
+    await _auth.signOut();
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const SplashScreen()), (r) => false);
   }
 
   Widget _buildDrawer(String? photoUrl) {
@@ -393,11 +407,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               child: photoUrl == null ? const Icon(Icons.person) : null,
             ),
           ),
-          ListTile(
-            leading: const Icon(Icons.logout),
-            title: const Text('Logout'),
-            onTap: _logout,
-          ),
+          ListTile(leading: const Icon(Icons.logout), title: const Text('Logout'), onTap: _logout),
         ],
       ),
     );

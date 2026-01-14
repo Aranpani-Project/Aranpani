@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart'; // IMPORTED FOR XFile
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../utils/colors.dart';
@@ -30,18 +30,19 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   final TextEditingController _mapLocationController = TextEditingController();
   final TextEditingController _contactNameController = TextEditingController();
   final TextEditingController _contactPhoneController = TextEditingController();
-  final TextEditingController _estimatedAmountController =
-      TextEditingController();
-  final TextEditingController _customDimensionController =
-      TextEditingController();
-  final TextEditingController _featureAmountController =
-      TextEditingController();
+  final TextEditingController _estimatedAmountController = TextEditingController();
+  final TextEditingController _customDimensionController = TextEditingController();
+  final TextEditingController _featureAmountController = TextEditingController();
 
   DateTime? _selectedDate;
-
   String? _selectedFeature;
   String? _type;
   String? _dimension;
+  List<String> _selectedImages = [];
+  bool _isLoading = false;
+  
+  // TO BE FETCHED FROM FIREBASE
+  String _aadharNumber = "N/A";
 
   final List<Map<String, dynamic>> _predefinedDimensions = [
     {'name': '2 feet', 'amount': 50000},
@@ -49,202 +50,134 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
     {'name': '4 feet', 'amount': 100000},
   ];
 
-  List<String> _selectedImages = [];
-  bool _isLoading = false;
+  @override
+  void initState() {
+    super.initState();
+    _fetchContractorData(); 
+  }
 
-  bool _validateCurrentPage() {
-    switch (_currentPage) {
-      case 0:
-        return _placeController.text.isNotEmpty &&
-            _nearbyTownController.text.isNotEmpty &&
-            _talukController.text.isNotEmpty &&
-            _districtController.text.isNotEmpty &&
-            _mapLocationController.text.isNotEmpty &&
-            _selectedDate != null;
-      case 1:
-        return _selectedFeature != null;
-      case 2:
-        return _contactNameController.text.isNotEmpty &&
-            _contactPhoneController.text.isNotEmpty &&
-            _estimatedAmountController.text.isNotEmpty;
-      default:
-        return false;
+  Future<void> _fetchContractorData() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        
+        if (doc.exists && doc.data() != null) {
+          final data = doc.data()!;
+          setState(() {
+            _contactNameController.text = (data['name'] ?? data['fullName'] ?? '').toString();
+            
+            String? fetchedPhone = data['phone']?.toString() ?? 
+                                   data['phoneNumber']?.toString() ?? 
+                                   data['mobile']?.toString();
+            
+            _contactPhoneController.text = fetchedPhone ?? user.phoneNumber ?? '';
+            
+            // FETCH AADHAR NUMBER
+            _aadharNumber = (data['aadhar'] ?? data['aadharNumber'] ?? 'N/A').toString();
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching user data: $e");
     }
   }
 
-  Future<void> _selectDate(BuildContext context) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.light(
-            primary: Color(0xFF5D4037), // Bronze
-            onPrimary: Colors.white,
-            surface: Color(0xFFFFFDF5), // Ivory
-          ),
-        ),
-        child: child!,
-      ),
-    );
-
-    if (picked != null) setState(() => _selectedDate = picked);
+  bool _validateCurrentPage() {
+    if (_currentPage == 0) {
+      if (_placeController.text.trim().isEmpty) return _showWarning('Place name is required');
+      if (_nearbyTownController.text.trim().isEmpty) return _showWarning('Nearby town is required');
+      if (_talukController.text.trim().isEmpty) return _showWarning('Taluk is required');
+      if (_districtController.text.trim().isEmpty) return _showWarning('District is required');
+      if (_mapLocationController.text.trim().isEmpty) return _showWarning('Please capture GPS coordinates');
+      if (_selectedDate == null) return _showWarning('Please select a visit date');
+      return true;
+    } 
+    if (_currentPage == 1) {
+      if (_selectedFeature == null) return _showWarning('Please select a feature type');
+      if (_type == null) return _showWarning('Please select condition type');
+      if (_type == 'new' && _dimension == null) return _showWarning('Please select a dimension');
+      return true;
+    } 
+    if (_currentPage == 2) {
+      if (_contactNameController.text.trim().isEmpty) return _showWarning('Contractor name missing');
+      if (_contactPhoneController.text.trim().isEmpty) return _showWarning('Phone number missing');
+      if (_estimatedAmountController.text.trim().isEmpty) return _showWarning('Enter total cost');
+      if (_selectedImages.length < 5) return _showWarning('Please upload at least 5 photos');
+      return true;
+    }
+    return false;
   }
 
-  String _toDMS(double value, bool isLat) {
-    final absValue = value.abs();
-    final degrees = absValue.floor();
-    final minutesFull = (absValue - degrees) * 60;
-    final minutes = minutesFull.floor();
-    final seconds = (minutesFull - minutes) * 60;
-    final direction =
-        isLat ? (value >= 0 ? 'N' : 'S') : (value >= 0 ? 'E' : 'W');
-    return '${degrees}°'
-        '${minutes.toString().padLeft(2, '0')}\''
-        '${seconds.toStringAsFixed(1).padLeft(4, '0')}\"'
-        '$direction';
+  bool _showWarning(String msg) {
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: const Color(0xFFB71C1C), behavior: SnackBarBehavior.floating),
+    );
+    return false;
   }
 
   Future<void> _detectAndFillLocation() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enable location services'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
+    setState(() => _isLoading = true);
+    try {
+      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      setState(() {
+        _mapLocationController.text = "${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}";
+      });
+    } catch (e) {
+      _showWarning("Could not fetch location. Ensure GPS is on.");
+    } finally {
+      setState(() => _isLoading = false);
     }
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Location permission denied'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-    }
-    if (permission == LocationPermission.deniedForever) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Location permissions permanently denied. Please enable from Settings.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    List<Position> samples = [];
-    for (int i = 0; i < 3; i++) {
-      final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.bestForNavigation,
-      );
-      samples.add(pos);
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
-
-    double avgLat =
-        samples.map((e) => e.latitude).reduce((a, b) => a + b) / samples.length;
-    double avgLng = samples.map((e) => e.longitude).reduce((a, b) => a + b) /
-        samples.length;
-
-    String latDMS = _toDMS(avgLat, true);
-    String lngDMS = _toDMS(avgLng, false);
-
-    setState(() {
-      _mapLocationController.text = "$latDMS $lngDMS";
-    });
   }
 
   Future<void> _createProject() async {
-    if (!_validateCurrentPage()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please fill all required fields'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
+    if (!_validateCurrentPage()) return;
     setState(() => _isLoading = true);
-
     try {
       final user = FirebaseAuth.instance.currentUser!;
-      final projectId = const Uuid().v4();
+      
+      // GENERATE UNIQUE PROJECT ID FOR DASHBOARD
+      final String rawId = const Uuid().v4();
+      final String projectDisplayId = "PRJ-${rawId.substring(0, 8).toUpperCase()}";
 
       List<String> uploadedImageUrls = [];
 
-      // --- FIXED UPLOAD LOGIC ---
       for (final imgPath in _selectedImages) {
-        // Create an XFile from the path string
-        final xFile = XFile(imgPath);
-
         final url = await CloudinaryService.uploadImage(
-          imageFile: xFile, // Pass XFile
+          imageFile: XFile(imgPath),
           userId: user.uid,
-          projectId: projectId,
+          projectId: projectDisplayId,
         );
-
-        // Check for null before adding
-        if (url != null) {
-          uploadedImageUrls.add(url);
-        }
+        if (url != null) uploadedImageUrls.add(url);
       }
-      // --------------------------
 
-      await FirebaseFirestore.instance
-          .collection('projects')
-          .doc(projectId)
-          .set({
-        'projectNumber': DateTime.now().millisecondsSinceEpoch.toString(),
-        'projectId': projectId,
+      await FirebaseFirestore.instance.collection('projects').doc(rawId).set({
+        'projectId': projectDisplayId, // UNIQUE ID
         'userId': user.uid,
+        'aadharNumber': _aadharNumber, // AUTOMATICALLY SENT TO ADMIN
         'place': _placeController.text.trim(),
         'nearbyTown': _nearbyTownController.text.trim(),
         'taluk': _talukController.text.trim(),
         'district': _districtController.text.trim(),
         'mapLocation': _mapLocationController.text.trim(),
-        'feature': _selectedFeature ?? '',
-        'featureType': _type ?? '',
-        'featureDimension': _dimension ?? '',
+        'visitDate': _selectedDate != null ? Timestamp.fromDate(_selectedDate!) : null,
+        'feature': _selectedFeature,
+        'featureType': _type,
+        'featureDimension': _dimension == 'custom' ? _customDimensionController.text.trim() : _dimension,
         'featureAmount': _featureAmountController.text.trim(),
         'contactName': _contactNameController.text.trim(),
         'contactPhone': _contactPhoneController.text.trim(),
         'estimatedAmount': _estimatedAmountController.text.trim(),
-        'imageUrls': uploadedImageUrls,
+        'imageUrls': uploadedImageUrls, // PHOTOS SENT TO ADMIN
         'dateCreated': FieldValue.serverTimestamp(),
-        'progress': 0,
         'status': 'pending',
-        'removedByUser': false,
       });
 
       if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Plan proposed successfully!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-
       Navigator.pop(context, true);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Color(0xFFB71C1C), // Sacred Red
-        ),
-      );
+      _showWarning('Error: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -253,7 +186,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFFDF5), // Ivory Background
+      backgroundColor: const Color(0xFFFFFDF5),
       body: SafeArea(
         child: Column(
           children: [
@@ -264,11 +197,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                 controller: _pageController,
                 physics: const NeverScrollableScrollPhysics(),
                 onPageChanged: (i) => setState(() => _currentPage = i),
-                children: [
-                  _buildLocationPage(),
-                  _buildFeaturePage(),
-                  _buildContactPage(),
-                ],
+                children: [_buildLocationPage(), _buildFeaturePage(), _buildContactPage()],
               ),
             ),
             _buildNavigationButtons(),
@@ -280,452 +209,74 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
 
   Widget _buildHeader() {
     return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Text(
-        'Propose a Plan',
-        style: GoogleFonts.cinzel(
-          fontSize: 26,
-          fontWeight: FontWeight.bold,
-          color: const Color(0xFF3E2723), // Dark Coffee
-        ),
-      ),
+      padding: const EdgeInsets.only(top: 20, bottom: 10),
+      child: Text('Propose a Plan', style: GoogleFonts.cinzel(fontSize: 24, fontWeight: FontWeight.bold, color: const Color(0xFF3E2723))),
     );
   }
 
   Widget _buildProgressIndicator() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      child: Row(
-        children: [
-          _step(0, 'Location'),
-          _line(0),
-          _step(1, 'Feature'),
-          _line(1),
-          _step(2, 'Details'),
-        ],
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 10),
+      child: Row(children: [
+        _step(0, 'Location'), _line(0),
+        _step(1, 'Feature'), _line(1),
+        _step(2, 'Details'),
+      ]),
     );
   }
 
   Widget _step(int step, String label) {
     final active = _currentPage >= step;
-    return Column(
-      children: [
-        CircleAvatar(
-          backgroundColor: active ? const Color(0xFF5D4037) : const Color(0xFFF5E6CA),
-          child: Text(
-            '${step + 1}',
-            style: TextStyle(color: active ? Colors.white : const Color(0xFF8D6E63)),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: GoogleFonts.poppins(
-            fontSize: 12,
-            fontWeight: active ? FontWeight.bold : FontWeight.normal,
-            color: active ? const Color(0xFF3E2723) : const Color(0xFF8D6E63),
-          ),
-        ),
-      ],
-    );
+    return Column(children: [
+      CircleAvatar(
+        radius: 18,
+        backgroundColor: active ? const Color(0xFF5D4037) : const Color(0xFFF5E6CA),
+        child: Text('${step + 1}', style: TextStyle(fontSize: 12, color: active ? Colors.white : const Color(0xFF8D6E63))),
+      ),
+      const SizedBox(height: 4),
+      Text(label, style: GoogleFonts.poppins(fontSize: 10, fontWeight: active ? FontWeight.bold : FontWeight.normal)),
+    ]);
   }
 
   Widget _line(int step) {
-    final active = _currentPage > step;
-    return Expanded(
-      child: Container(
-        height: 2,
-        margin: const EdgeInsets.only(bottom: 20),
-        color: active ? const Color(0xFF5D4037) : const Color(0xFFF5E6CA),
-      ),
-    );
+    return Expanded(child: Container(height: 2, margin: const EdgeInsets.only(bottom: 20, left: 4, right: 4), color: _currentPage > step ? const Color(0xFF5D4037) : const Color(0xFFF5E6CA)));
   }
 
-  Widget _buildLocationPage() {
-    return _buildFormContainer(
-      child: Column(
-        children: [
-          _title('Location Details', 'Enter the location information'),
-          const SizedBox(height: 16),
-          _textField(_placeController, 'Place', Icons.location_on_outlined),
-          const SizedBox(height: 16),
-          _textField(_nearbyTownController, 'Nearby Town', Icons.location_city),
-          const SizedBox(height: 16),
-          _textField(_talukController, 'Taluk', Icons.map_outlined),
-          const SizedBox(height: 16),
-          _textField(_districtController, 'District', Icons.domain_outlined),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _mapLocationController,
-                  style: const TextStyle(color: Color(0xFF3E2723)),
-                  decoration: InputDecoration(
-                    labelText: 'Map Location (auto-detected)',
-                    hintText: 'Tap GPS icon',
-                    hintStyle: const TextStyle(color: Color(0xFF8D6E63)),
-                    labelStyle: const TextStyle(color: Color(0xFF8D6E63)),
-                    prefixIcon:
-                        const Icon(Icons.pin_drop, color: Color(0xFF5D4037)),
-                    filled: true,
-                    fillColor: Colors.white,
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFFF5E6CA)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF5D4037)),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.my_location, color: Color(0xFF5D4037)),
-                onPressed: _detectAndFillLocation,
-                tooltip: 'Use current location',
-              ),
-            ],
+  Widget _plainTextField(TextEditingController c, String label, {TextInputType keyboard = TextInputType.text, bool readOnly = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextFormField(
+        controller: c,
+        keyboardType: keyboard,
+        readOnly: readOnly,
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: TextStyle(color: const Color(0xFF5D4037).withOpacity(0.7)),
+          filled: true,
+          fillColor: readOnly ? Colors.grey.shade100 : Colors.white,
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFFF5E6CA)),
           ),
-          const SizedBox(height: 16),
-          InkWell(
-            onTap: () => _selectDate(context),
-            child: _dateField(),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFF5D4037)),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFeaturePage() {
-    return _buildFormContainer(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _title('Select Feature', 'Choose what you want to propose'),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(child: _featureButton('Lingam', Icons.account_balance)),
-              const SizedBox(width: 12),
-              Expanded(child: _featureButton('Avudai', Icons.architecture)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _featureButton('Nandhi', Icons.pets),
-          if (_selectedFeature != null) _buildFeatureDetails(_selectedFeature!),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFeatureDetails(String featureName) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 30),
-        Text(
-          '${featureName[0].toUpperCase()}${featureName.substring(1)} Details',
-          style: GoogleFonts.poppins(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: const Color(0xFF3E2723),
-          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         ),
-        const SizedBox(height: 16),
-        Text(
-          'Type',
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: const Color(0xFF8D6E63),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(child: _buildRadioOption('Old', 'old')),
-            const SizedBox(width: 12),
-            Expanded(child: _buildRadioOption('New', 'new')),
-          ],
-        ),
-        if (_type == 'new') ...[
-          const SizedBox(height: 24),
-          Text(
-            'Dimensions',
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: const Color(0xFF8D6E63),
-            ),
-          ),
-          const SizedBox(height: 8),
-          ..._predefinedDimensions.map((dim) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _buildDimensionOption(
-                    dim['name'], '₹${dim['amount']}', dim['name']),
-              )),
-          _buildDimensionOption('Others', 'Custom', 'custom'),
-          if (_dimension == 'custom') ...[
-            const SizedBox(height: 16),
-            _textField(_customDimensionController,
-                'Custom Dimension (e.g. 2.5 ft)', Icons.straighten),
-            const SizedBox(height: 16),
-            _textField(_featureAmountController, 'Amount Needed (₹)',
-                Icons.currency_rupee,
-                keyboard: TextInputType.number),
-          ],
-        ],
-      ],
-    );
-  }
-
-  Widget _featureButton(String title, IconData icon) {
-    final selected = _selectedFeature == title.toLowerCase();
-    return InkWell(
-      onTap: () => setState(() {
-        _selectedFeature = title.toLowerCase();
-        _type = null;
-        _dimension = null;
-        _customDimensionController.clear();
-        _featureAmountController.clear();
-      }),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFFF5E6CA) : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected ? const Color(0xFF5D4037) : const Color(0xFFF5E6CA),
-            width: 2,
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon,
-                color: selected ? const Color(0xFF5D4037) : const Color(0xFF8D6E63)),
-            const SizedBox(width: 8),
-            Text(
-              title,
-              style: GoogleFonts.poppins(
-                color: selected ? const Color(0xFF3E2723) : const Color(0xFF8D6E63),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRadioOption(String title, String value) {
-    final isSelected = _type == value;
-
-    return InkWell(
-      onTap: () => setState(() {
-        _type = value;
-        _dimension = null;
-      }),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFF5E6CA) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? const Color(0xFF5D4037) : const Color(0xFFF5E6CA),
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-              color: isSelected ? const Color(0xFF5D4037) : const Color(0xFF8D6E63),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              title,
-              style: GoogleFonts.poppins(
-                fontSize: 16,
-                color: isSelected ? const Color(0xFF3E2723) : const Color(0xFF8D6E63),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDimensionOption(String title, String subtitle, String value) {
-    final isSelected = _dimension == value;
-
-    return InkWell(
-      onTap: () => setState(() {
-        _dimension = value;
-        if (value != 'custom') {
-          final dim = _predefinedDimensions.firstWhere(
-            (d) => d['name'] == value,
-            orElse: () => {'amount': 0},
-          );
-          _featureAmountController.text = dim['amount'].toString();
-          _estimatedAmountController.text = dim['amount'].toString();
-        } else {
-          _featureAmountController.clear();
-          _estimatedAmountController.clear();
-        }
-      }),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFF5E6CA) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? const Color(0xFF5D4037) : const Color(0xFFF5E6CA),
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              isSelected ? Icons.check_circle : Icons.circle_outlined,
-              color: isSelected ? const Color(0xFF5D4037) : const Color(0xFF8D6E63),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.poppins(
-                      color: const Color(0xFF3E2723),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: GoogleFonts.poppins(
-                      color: const Color(0xFF8D6E63),
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildContactPage() {
-    return _buildFormContainer(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _title('Contact & Details', 'Provide your details'),
-          const SizedBox(height: 16),
-          _textField(_contactNameController, 'Contact Name', Icons.person),
-          const SizedBox(height: 16),
-          _textField(_contactPhoneController, 'Phone Number', Icons.phone),
-          const SizedBox(height: 16),
-          ImagePickerWidget(
-            maxImages: 5,
-            onImagesSelected: (imgs) => _selectedImages = imgs,
-          ),
-          const SizedBox(height: 16),
-          _textField(
-            _estimatedAmountController,
-            'Estimated Amount',
-            Icons.account_balance_wallet,
-            keyboard: TextInputType.number,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNavigationButtons() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      color: Colors.white,
-      child: Row(
-        children: [
-          if (_currentPage > 0)
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => _pageController.previousPage(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF5D4037),
-                  side: const BorderSide(color: Color(0xFF5D4037)),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: Text(
-                  'Previous',
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
-          if (_currentPage > 0) const SizedBox(width: 16),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: _isLoading ? null : () {
-                if (!_validateCurrentPage()) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Please fill all required fields'),
-                      backgroundColor: Colors.orange,
-                    ),
-                  );
-                  return;
-                }
-                if (_currentPage < 2) {
-                  _pageController.nextPage(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                  );
-                } else {
-                  _createProject();
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF5D4037),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                elevation: 0,
-              ),
-              child: _isLoading
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                    )
-                  : Text(
-                      _currentPage < 2 ? 'Next' : 'Submit Plan',
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                    ),
-            ),
-          ),
-        ],
       ),
     );
   }
 
   Widget _buildFormContainer({required Widget child}) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(20),
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFFF5E6CA).withOpacity(0.3),
-          borderRadius: BorderRadius.circular(20),
+          color: const Color(0xFFF5E6CA).withOpacity(0.2),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: const Color(0xFFF5E6CA)),
         ),
         child: child,
@@ -733,74 +284,224 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
     );
   }
 
-  Widget _textField(TextEditingController c, String label, IconData icon,
-      {TextInputType keyboard = TextInputType.text}) {
-    return TextField(
-      controller: c,
-      keyboardType: keyboard,
-      style: const TextStyle(color: Color(0xFF3E2723)),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(color: Color(0xFF8D6E63)),
-        prefixIcon: Icon(icon, color: const Color(0xFF5D4037)),
-        filled: true,
-        fillColor: Colors.white,
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFFF5E6CA)),
+  Widget _buildLocationPage() {
+    return _buildFormContainer(child: Column(children: [
+      _title('Location Info', 'Enter details of the site'),
+      const SizedBox(height: 16),
+      _plainTextField(_placeController, 'Place'),
+      _plainTextField(_nearbyTownController, 'Nearby Town'),
+      _plainTextField(_talukController, 'Taluk'),
+      _plainTextField(_districtController, 'District'),
+      Row(children: [
+        Expanded(child: _plainTextField(_mapLocationController, 'Map Location', readOnly: true)),
+        const SizedBox(width: 8),
+        Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(color: const Color(0xFF5D4037), borderRadius: BorderRadius.circular(10)),
+          child: IconButton(icon: const Icon(Icons.my_location, color: Colors.white), onPressed: _detectAndFillLocation),
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF5D4037)),
-        ),
+      ]),
+      InkWell(onTap: () => _selectDate(context), child: _dateField()),
+    ]));
+  }
+
+  Widget _buildFeaturePage() {
+    return _buildFormContainer(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _title('Select Feature', 'Choose structure type'),
+      const SizedBox(height: 16),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        SizedBox(width: MediaQuery.of(context).size.width * 0.38, child: _featureButton('Lingam', Icons.temple_hindu)),
+        SizedBox(width: MediaQuery.of(context).size.width * 0.38, child: _featureButton('Avudai', Icons.architecture)),
+        SizedBox(width: MediaQuery.of(context).size.width * 0.38, child: _featureButton('Nandhi', Icons.pets)),
+      ]),
+      if (_selectedFeature != null) _buildFeatureDetails(),
+    ]));
+  }
+
+  Widget _buildFeatureDetails() {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const SizedBox(height: 20),
+      Text('Condition Type', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold)),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(child: _buildRadioOption('Old/Existing', 'old')),
+        const SizedBox(width: 8),
+        Expanded(child: _buildRadioOption('New Structure', 'new')),
+      ]),
+      if (_type == 'new') ...[
+        const SizedBox(height: 20),
+        Text('Choose Dimensions', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        ..._predefinedDimensions.map((dim) => Padding(padding: const EdgeInsets.only(bottom: 8), child: _buildDimensionOption(dim['name'], 'Estimate: Rs ${dim['amount']}', dim['name']))),
+        _buildDimensionOption('Other', 'Custom Size', 'custom'),
+        if (_dimension == 'custom') ...[
+          const SizedBox(height: 12),
+          _plainTextField(_customDimensionController, 'Size (e.g. 5 ft)'),
+          _plainTextField(_featureAmountController, 'Required Amount (Rs)', keyboard: TextInputType.number),
+        ],
+      ],
+    ]);
+  }
+
+  Widget _buildContactPage() {
+    return _buildFormContainer(child: Column(children: [
+      _title('Contact Details', 'Contractor Information'),
+      const SizedBox(height: 16),
+      _plainTextField(_contactNameController, 'Contact Name', readOnly: true),
+      _plainTextField(_contactPhoneController, 'Phone Number', readOnly: true),
+      
+      // DISPLAY FETCHED AADHAR
+      _plainTextField(TextEditingController(text: _aadharNumber), 'Aadhar Number', readOnly: true),
+      
+      _plainTextField(_estimatedAmountController, 'Total Estimated Cost', keyboard: TextInputType.number),
+      const SizedBox(height: 20),
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text('Site Photos', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold)),
+        Text('(At least 5 required)', style: GoogleFonts.poppins(fontSize: 12, color: Colors.red, fontWeight: FontWeight.w500)),
+      ]),
+      const SizedBox(height: 12),
+      ImagePickerWidget(
+        maxImages: 10,
+        onImagesSelected: (imgs) => setState(() => _selectedImages = imgs),
       ),
+    ]));
+  }
+
+  Widget _buildNavigationButtons() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Color(0xFFF5E6CA)))),
+      child: Row(children: [
+        Expanded(
+          child: OutlinedButton(
+            onPressed: () {
+              if (_currentPage > 0) {
+                _pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+              } else {
+                Navigator.pop(context);
+              }
+            },
+            style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF5D4037), side: const BorderSide(color: Color(0xFF5D4037)), padding: const EdgeInsets.symmetric(vertical: 15)),
+            child: const Text('Back'),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ElevatedButton(
+            onPressed: _isLoading ? null : () {
+              if (_validateCurrentPage()) {
+                if (_currentPage < 2) {
+                  _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+                } else {
+                  _createProject();
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF5D4037), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 15)),
+            child: _isLoading ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : Text(_currentPage < 2 ? 'Continue' : 'Submit Proposal'),
+          ),
+        ),
+      ]),
     );
   }
 
-  Widget _title(String title, String subtitle) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: GoogleFonts.cinzel(
-            fontSize: 22,
-            color: const Color(0xFF3E2723),
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          subtitle,
-          style: GoogleFonts.poppins(
-            color: const Color(0xFF8D6E63),
-            fontSize: 13,
-          ),
-        ),
-      ],
+  Widget _featureButton(String title, IconData icon) {
+    final sel = _selectedFeature == title.toLowerCase();
+    return InkWell(
+      onTap: () => setState(() { _selectedFeature = title.toLowerCase(); _type = null; }), 
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12), 
+        decoration: BoxDecoration(
+          color: sel ? const Color(0xFFF5E6CA) : Colors.white, 
+          borderRadius: BorderRadius.circular(10), 
+          border: Border.all(color: sel ? const Color(0xFF5D4037) : const Color(0xFFF5E6CA), width: 1.5)
+        ), 
+        child: Column(children: [
+          Icon(icon, color: sel ? const Color(0xFF5D4037) : const Color(0xFF8D6E63)), 
+          const SizedBox(height: 4), 
+          Text(title, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: sel ? const Color(0xFF3E2723) : const Color(0xFF8D6E63)))
+        ])
+      )
     );
+  }
+
+  Widget _buildRadioOption(String title, String value) {
+    final sel = _type == value;
+    return InkWell(
+      onTap: () => setState(() { _type = value; _dimension = null; }), 
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8), 
+        decoration: BoxDecoration(
+          color: sel ? const Color(0xFFF5E6CA) : Colors.white, 
+          borderRadius: BorderRadius.circular(8), 
+          border: Border.all(color: sel ? const Color(0xFF5D4037) : const Color(0xFFF5E6CA))
+        ), 
+        child: Row(children: [
+          Icon(sel ? Icons.radio_button_checked : Icons.radio_button_off, size: 18, color: const Color(0xFF5D4037)), 
+          const SizedBox(width: 6), 
+          Expanded(child: Text(title, style: const TextStyle(fontSize: 12)))
+        ])
+      )
+    );
+  }
+
+  Widget _buildDimensionOption(String title, String subtitle, String value) {
+    final sel = _dimension == value;
+    return InkWell(
+      onTap: () => setState(() { 
+        _dimension = value; 
+        if (value != 'custom') { 
+          final d = _predefinedDimensions.firstWhere((x) => x['name'] == value); 
+          _featureAmountController.text = d['amount'].toString(); 
+          _estimatedAmountController.text = d['amount'].toString(); 
+        } 
+      }), 
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6), 
+        padding: const EdgeInsets.all(10), 
+        decoration: BoxDecoration(
+          color: sel ? const Color(0xFFF5E6CA) : Colors.white, 
+          borderRadius: BorderRadius.circular(8), 
+          border: Border.all(color: sel ? const Color(0xFF5D4037) : const Color(0xFFF5E6CA))
+        ), 
+        child: Row(children: [
+          Icon(sel ? Icons.check_circle : Icons.circle_outlined, size: 20, color: const Color(0xFF5D4037)), 
+          const SizedBox(width: 10), 
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)), 
+            Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.grey))
+          ])
+        ])
+      )
+    );
+  }
+
+  Widget _title(String t, String s) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(t, style: GoogleFonts.cinzel(fontSize: 18, fontWeight: FontWeight.bold, color: const Color(0xFF3E2723))), 
+      Text(s, style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF8D6E63)))
+    ]);
   }
 
   Widget _dateField() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16), 
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFF5E6CA)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.calendar_today, color: Color(0xFF5D4037)),
-          const SizedBox(width: 12),
-          Text(
-            _selectedDate == null
-                ? 'Select Date of Visit'
-                : DateFormat('dd MMM yyyy').format(_selectedDate!),
-            style: GoogleFonts.poppins(color: const Color(0xFF3E2723), fontSize: 16),
-          ),
-        ],
-      ),
+        color: Colors.white, 
+        borderRadius: BorderRadius.circular(10), 
+        border: Border.all(color: const Color(0xFFF5E6CA))
+      ), 
+      child: Row(children: [
+        const Icon(Icons.calendar_month, color: Color(0xFF5D4037), size: 20), 
+        const SizedBox(width: 12), 
+        Text(_selectedDate == null ? 'Visit Date' : DateFormat('dd-MM-yyyy').format(_selectedDate!), style: const TextStyle(fontSize: 14))
+      ])
     );
+  }
+
+  Future<void> _selectDate(BuildContext context) async {
+    final picked = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime(2020), lastDate: DateTime(2030));
+    if (picked != null) setState(() => _selectedDate = picked);
   }
 }
