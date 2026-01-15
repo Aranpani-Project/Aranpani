@@ -95,7 +95,10 @@ class PendingTempleDetailScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  _buildProjectComponentCard(),
+
+                  // NEW: Requested Features section
+                  _buildFeaturesCard(),
+
                   const SizedBox(height: 16),
                   _buildContactBudgetCard(),
                   const SizedBox(height: 24),
@@ -214,6 +217,111 @@ class PendingTempleDetailScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  // NEW: features card
+  Widget _buildFeaturesCard() {
+    final raw = temple['features'];
+    List<Map<String, dynamic>> features = [];
+    if (raw is List) {
+      features = raw
+          .map((e) => (e as Map).map(
+                (k, v) => MapEntry(k.toString(), v),
+              ))
+          .toList();
+    }
+
+    return _buildSectionCard(
+      icon: Icons.list_alt,
+      title: 'Requested Features',
+      child: features.isEmpty
+          ? const Text(
+              'No feature details submitted.',
+              style: TextStyle(color: Colors.grey),
+            )
+          : Column(
+              children: features.map((f) {
+                final label = (f['label'] ?? f['key'] ?? 'Feature').toString();
+                final condition =
+                    (f['condition'] ?? 'old').toString().toLowerCase();
+                final dimension = (f['dimension'] ?? '').toString();
+                final amount = (f['amount'] ?? '').toString();
+                final customSize = (f['customSize'] ?? '').toString();
+
+                final isNew = condition == 'new';
+                final statusText = isNew ? 'New' : 'Old / Existing';
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: maroonDeep.withOpacity(0.02),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isNew
+                          ? const Color(0xFF2D6A4F)
+                          : Colors.grey.shade300,
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        isNew
+                            ? Icons.fiber_new_rounded
+                            : Icons.history_rounded,
+                        size: 18,
+                        color: isNew
+                            ? const Color(0xFF2D6A4F)
+                            : Colors.grey.shade700,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              label,
+                              style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                                color: maroonDeep,
+                              ),
+                            ),
+                            Text(
+                              statusText,
+                              style: GoogleFonts.poppins(
+                                fontSize: 11,
+                                color: isNew
+                                    ? const Color(0xFF2D6A4F)
+                                    : Colors.grey,
+                              ),
+                            ),
+                            if (isNew && dimension.isNotEmpty)
+                              Text(
+                                'Size: ${dimension == 'custom' && customSize.isNotEmpty ? customSize : dimension}',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  color: textDark,
+                                ),
+                              ),
+                            if (isNew && amount.isNotEmpty)
+                              Text(
+                                'Required amount: ₹$amount',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  color: textDark,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
     );
   }
 
@@ -349,31 +457,6 @@ class PendingTempleDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildProjectComponentCard() {
-    final feature = (temple['feature'] ?? 'General Renovation').toString();
-    return _buildSectionCard(
-      icon: Icons.architecture,
-      title: 'Project Focus',
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: maroonDeep.withOpacity(0.04),
-          borderRadius: BorderRadius.circular(12),
-          border: const Border(
-            left: BorderSide(color: goldAccent, width: 4),
-          ),
-        ),
-        child: Text(
-          feature,
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w600,
-            color: maroonDeep,
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _buildContactBudgetCard() {
     final double amount =

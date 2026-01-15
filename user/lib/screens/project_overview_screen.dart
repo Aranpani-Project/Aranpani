@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-import 'project_chat_section.dart'; 
+import 'project_chat_section.dart';
 import '../services/cloudinary_service.dart';
 
 class ProjectOverviewScreen extends StatefulWidget {
@@ -31,6 +31,8 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
 
   CollectionReference<Map<String, dynamic>> get _billsRef =>
       _firestore.collection('bills');
+
+  bool _isCompletionRequesting = false;
 
   @override
   void initState() {
@@ -96,35 +98,54 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           backgroundColor: backgroundCream,
-          title: Text('Request Amount', style: GoogleFonts.poppins(color: primaryMaroon)),
+          title: Text('Request Amount',
+              style: GoogleFonts.poppins(color: primaryMaroon)),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Work Name')),
-                TextField(controller: amountCtrl, decoration: const InputDecoration(labelText: 'Amount'), keyboardType: TextInputType.number),
-                TextField(controller: upiCtrl, decoration: const InputDecoration(labelText: 'UPI ID (Optional)')),
+                TextField(
+                    controller: titleCtrl,
+                    decoration:
+                        const InputDecoration(labelText: 'Work Name')),
+                TextField(
+                    controller: amountCtrl,
+                    decoration:
+                        const InputDecoration(labelText: 'Amount'),
+                    keyboardType: TextInputType.number),
+                TextField(
+                    controller: upiCtrl,
+                    decoration:
+                        const InputDecoration(labelText: 'UPI ID (Optional)')),
                 const SizedBox(height: 15),
                 ElevatedButton.icon(
                   onPressed: () async {
-                    final img = await _picker.pickImage(source: ImageSource.gallery);
+                    final img =
+                        await _picker.pickImage(source: ImageSource.gallery);
                     if (img != null) setDialogState(() => qrFile = img);
                   },
                   icon: const Icon(Icons.qr_code),
                   label: const Text('Upload QR Code'),
                 ),
-                if (qrFile != null) const Text('QR selected', style: TextStyle(color: Colors.green)),
+                if (qrFile != null)
+                  const Text('QR selected',
+                      style: TextStyle(color: Colors.green)),
               ],
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel')),
             ElevatedButton(
               onPressed: () async {
                 if (titleCtrl.text.isEmpty || amountCtrl.text.isEmpty) return;
                 String? qrUrl;
                 if (qrFile != null) {
-                  qrUrl = await CloudinaryService.uploadImage(imageFile: qrFile!, userId: _userId, projectId: _projectId);
+                  qrUrl = await CloudinaryService.uploadImage(
+                      imageFile: qrFile!,
+                      userId: _userId,
+                      projectId: _projectId);
                 }
                 await _firestore.collection('transactions').add({
                   'projectId': _projectId,
@@ -136,131 +157,13 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                   'status': 'pending',
                   'date': FieldValue.serverTimestamp(),
                 });
-                Navigator.pop(context);
+                if (context.mounted) Navigator.pop(context);
               },
               child: const Text('Submit Request'),
             )
           ],
         ),
       ),
-    );
-  }
-
-  Future<void> _showAddWorkDialog() async {
-    final TextEditingController nameCtrl = TextEditingController();
-
-    await showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setStateDialog) {
-            return AlertDialog(
-              backgroundColor: backgroundCream,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-              title: Text('Add New Work', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: primaryMaroon)),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameCtrl,
-                    decoration: InputDecoration(
-                      labelText: 'Work Name',
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
-                  const SizedBox(height: 15),
-                  const Text(
-                    "Note: Start date will be captured automatically when you start the work.",
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: primaryMaroon),
-                  onPressed: () async {
-                    if (nameCtrl.text.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter work name')));
-                      return;
-                    }
-                    await _firestore.collection('project_tasks').add({
-                      'projectId': _projectId,
-                      'taskName': nameCtrl.text,
-                      'status': 'todo',
-                      'createdAt': FieldValue.serverTimestamp(),
-                    });
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Work Added Successfully!')));
-                  },
-                  child: const Text('Add Work', style: TextStyle(color: Colors.white)),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _billsTab() {
-    return Column(
-      children: [
-        const SizedBox(height: 16),
-        ElevatedButton.icon(
-          onPressed: _showUploadBillDialog, 
-          icon: const Icon(Icons.upload),
-          label: const Text("Upload Bill"),
-          style: ElevatedButton.styleFrom(backgroundColor: primaryMaroon, foregroundColor: Colors.white),
-        ),
-        Expanded(
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _billsRef.where('projectId', isEqualTo: _projectId).orderBy('createdAt', descending: true).snapshots(),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-              final docs = snapshot.data!.docs;
-              if (docs.isEmpty) return Center(child: Text("No bills uploaded yet", style: GoogleFonts.poppins(color: Colors.grey)));
-              
-              return ListView.builder(
-                padding: const EdgeInsets.all(12),
-                itemCount: docs.length,
-                itemBuilder: (context, i) {
-                  final bill = docs[i].data();
-                  final imageUrls = (bill['imageUrls'] as List? ?? []);
-                  return Card(
-                    child: ExpansionTile(
-                      title: Text(bill['title'] ?? 'Bill', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text('Amount: ₹${bill['amount'] ?? '0'}'),
-                      children: [
-                        if (imageUrls.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: imageUrls.map((url) => GestureDetector(
-                                onTap: () => _showFullScreenImage(url.toString()),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(url.toString(), width: 80, height: 80, fit: BoxFit.cover),
-                                ),
-                              )).toList(),
-                            ),
-                          )
-                      ],
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        )
-      ],
     );
   }
 
@@ -276,73 +179,108 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           backgroundColor: backgroundCream,
-          title: Text('Upload New Bill', style: GoogleFonts.poppins(color: primaryMaroon, fontWeight: FontWeight.bold)),
+          title: Text('Upload New Bill',
+              style: GoogleFonts.poppins(
+                  color: primaryMaroon, fontWeight: FontWeight.bold)),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Bill For (Title)')),
-                TextField(controller: amountCtrl, decoration: const InputDecoration(labelText: 'Total Amount'), keyboardType: TextInputType.number),
+                TextField(
+                    controller: titleCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'Bill For (Title)')),
+                TextField(
+                    controller: amountCtrl,
+                    decoration:
+                        const InputDecoration(labelText: 'Total Amount'),
+                    keyboardType: TextInputType.number),
                 const SizedBox(height: 20),
                 ElevatedButton.icon(
-                  onPressed: isUploading ? null : () async {
-                    final imgs = await _picker.pickMultiImage();
-                    if (imgs.isNotEmpty) setDialogState(() => selectedFiles = imgs);
-                  },
+                  onPressed: isUploading
+                      ? null
+                      : () async {
+                          final imgs = await _picker.pickMultiImage();
+                          if (imgs.isNotEmpty) {
+                            setDialogState(
+                                () => selectedFiles = imgs);
+                          }
+                        },
                   icon: const Icon(Icons.image),
-                  label: Text(selectedFiles.isEmpty ? 'Select Bill Photos' : '${selectedFiles.length} Images Selected'),
+                  label: Text(
+                      selectedFiles.isEmpty
+                          ? 'Select Bill Photos'
+                          : '${selectedFiles.length} Images Selected'),
                 ),
                 if (isUploading)
                   const Padding(
                     padding: EdgeInsets.only(top: 20),
-                    child: CircularProgressIndicator(color: primaryMaroon),
+                    child: CircularProgressIndicator(
+                        color: primaryMaroon),
                   ),
               ],
             ),
           ),
           actions: [
             TextButton(
-              onPressed: isUploading ? null : () => Navigator.pop(context),
+              onPressed:
+                  isUploading ? null : () => Navigator.pop(context),
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: isUploading ? null : () async {
-                if (titleCtrl.text.isEmpty || amountCtrl.text.isEmpty || selectedFiles.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all fields and select images')));
-                  return;
-                }
+              onPressed: isUploading
+                  ? null
+                  : () async {
+                      if (titleCtrl.text.isEmpty ||
+                          amountCtrl.text.isEmpty ||
+                          selectedFiles.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text(
+                                    'Please fill all fields and select images')));
+                        return;
+                      }
 
-                setDialogState(() => isUploading = true);
-                try {
-                  List<String> urls = [];
-                  for (var file in selectedFiles) {
-                    String? url = await CloudinaryService.uploadImage(
-                      imageFile: file, 
-                      userId: _userId, 
-                      projectId: _projectId
-                    );
-                    if (url != null) urls.add(url);
-                  }
+                      setDialogState(() => isUploading = true);
+                      try {
+                        List<String> urls = [];
+                        for (var file in selectedFiles) {
+                          String? url =
+                              await CloudinaryService.uploadImage(
+                                  imageFile: file,
+                                  userId: _userId,
+                                  projectId: _projectId);
+                          if (url != null) urls.add(url);
+                        }
 
-                  await _billsRef.add({
-                    'projectId': _projectId,
-                    'userId': _userId,
-                    'title': titleCtrl.text,
-                    'amount': double.parse(amountCtrl.text),
-                    'imageUrls': urls,
-                    'createdAt': FieldValue.serverTimestamp(),
-                  });
+                        await _billsRef.add({
+                          'projectId': _projectId,
+                          'userId': _userId,
+                          'title': titleCtrl.text,
+                          'amount':
+                              double.parse(amountCtrl.text),
+                          'imageUrls': urls,
+                          'createdAt':
+                              FieldValue.serverTimestamp(),
+                        });
 
-                  if (mounted) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bill Uploaded Successfully!')));
-                  }
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
-                } finally {
-                  setDialogState(() => isUploading = false);
-                }
-              },
+                        if (mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text(
+                                      'Bill Uploaded Successfully!')));
+                        }
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content:
+                                    Text('Upload failed: $e')));
+                      } finally {
+                        setDialogState(
+                            () => isUploading = false);
+                      }
+                    },
               child: const Text('Upload'),
             )
           ],
@@ -351,9 +289,91 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
+  // Bills tab
+  Widget _billsTab() {
+    return Column(
+      children: [
+        const SizedBox(height: 16),
+        ElevatedButton.icon(
+          onPressed: _showUploadBillDialog,
+          icon: const Icon(Icons.upload),
+          label: const Text("Upload Bill"),
+          style: ElevatedButton.styleFrom(
+              backgroundColor: primaryMaroon,
+              foregroundColor: Colors.white),
+        ),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: _billsRef
+                .where('projectId', isEqualTo: _projectId)
+                .orderBy('createdAt', descending: true)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(
+                    child: CircularProgressIndicator());
+              }
+              final docs = snapshot.data!.docs;
+              if (docs.isEmpty) {
+                return Center(
+                    child: Text("No bills uploaded yet",
+                        style: GoogleFonts.poppins(
+                            color: Colors.grey)));
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.all(12),
+                itemCount: docs.length,
+                itemBuilder: (context, i) {
+                  final bill = docs[i].data();
+                  final imageUrls = (bill['imageUrls'] as List? ?? []);
+                  return Card(
+                    child: ExpansionTile(
+                      title: Text(bill['title'] ?? 'Bill',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold)),
+                      subtitle:
+                          Text('Amount: ₹${bill['amount'] ?? '0'}'),
+                      children: [
+                        if (imageUrls.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.all(12.0),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: imageUrls
+                                  .map((url) => GestureDetector(
+                                        onTap: () => _showFullScreenImage(
+                                            url.toString()),
+                                        child: ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          child: Image.network(
+                                              url.toString(),
+                                              width: 80,
+                                              height: 80,
+                                              fit: BoxFit.cover),
+                                        ),
+                                      ))
+                                  .toList(),
+                            ),
+                          )
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        )
+      ],
+    );
+  }
+
+  // ACTIVITIES TAB: only ongoing + completed (no To Do list here)
   Widget _activitiesTab() {
     return DefaultTabController(
-      length: 3,
+      length: 2,
       child: Column(
         children: [
           Container(
@@ -363,7 +383,6 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
               unselectedLabelColor: Colors.grey,
               indicatorColor: primaryMaroon,
               tabs: [
-                Tab(text: "To Do"),
                 Tab(text: "Ongoing"),
                 Tab(text: "Completed"),
               ],
@@ -372,9 +391,8 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
           Expanded(
             child: TabBarView(
               children: [
-                _buildTodoList(),    
                 _buildOngoingList(),
-                _buildCompletedList(), 
+                _buildCompletedList(),
               ],
             ),
           ),
@@ -383,82 +401,40 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
-  // UPDATED: Sorted by createdAt Ascending (Oldest at top, Newest at bottom)
-  Widget _buildTodoList() {
-    return Stack(
-      children: [
-        StreamBuilder<QuerySnapshot>(
-          stream: _firestore
-              .collection('project_tasks')
-              .where('projectId', isEqualTo: _projectId)
-              .where('status', isEqualTo: 'todo')
-              .orderBy('createdAt', descending: false) // TOP to BOTTOM (Ascending)
-              .snapshots(),
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-            final docs = snapshot.data!.docs;
-
-            if (docs.isEmpty) {
-              return Center(child: Text("No works to be done", style: GoogleFonts.poppins(color: Colors.grey)));
-            }
-
-            return ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 80), 
-              itemCount: docs.length,
-              itemBuilder: (context, index) {
-                final data = docs[index].data() as Map<String, dynamic>;
-                final docId = docs[index].id;
-                
-                return TodoTaskCard(
-                  taskId: docId,
-                  taskName: data['taskName'] ?? 'Unknown Work',
-                  userId: _userId,
-                  projectId: _projectId,
-                );
-              },
-            );
-          },
-        ),
-
-        Positioned(
-          bottom: 20,
-          right: 20,
-          child: FloatingActionButton.extended(
-            backgroundColor: primaryMaroon,
-            onPressed: _showAddWorkDialog,
-            icon: const Icon(Icons.add, color: Colors.white),
-            label: const Text("Add Work", style: TextStyle(color: Colors.white)),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildOngoingList() {
     return StreamBuilder<QuerySnapshot>(
       stream: _firestore
           .collection('project_tasks')
           .where('projectId', isEqualTo: _projectId)
-          .where('status', whereIn: ['ongoing', 'pending_approval']) 
+          .where('status', whereIn: ['ongoing', 'pending_approval'])
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        if (!snapshot.hasData) {
+          return const Center(
+              child: CircularProgressIndicator());
+        }
         final docs = snapshot.data!.docs;
 
         if (docs.isEmpty) {
-          return Center(child: Text("No ongoing works", style: GoogleFonts.poppins(color: Colors.grey)));
+          return Center(
+              child: Text("No ongoing works",
+                  style: GoogleFonts.poppins(
+                      color: Colors.grey)));
         }
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: docs.length,
           itemBuilder: (context, index) {
-            final data = docs[index].data() as Map<String, dynamic>;
+            final data =
+                docs[index].data() as Map<String, dynamic>;
             final docId = docs[index].id;
             final status = data['status'] ?? 'ongoing';
-            
+
             Timestamp? startTs = data['startedAt'];
-            String dateDisplay = startTs != null ? "Started: ${_formatTimestamp(startTs)}" : "Date not captured";
+            String dateDisplay = startTs != null
+                ? "Started: ${_formatTimestamp(startTs)}"
+                : "Date not captured";
 
             return OngoingTaskCard(
               taskId: docId,
@@ -466,7 +442,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
               dateDisplay: dateDisplay,
               userId: _userId,
               projectId: _projectId,
-              currentStatus: status, 
+              currentStatus: status,
             );
           },
         );
@@ -474,36 +450,41 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
-  // UPDATED: Sorted by completedAt Descending (Stack: Newest First)
   Widget _buildCompletedList() {
     return StreamBuilder<QuerySnapshot>(
       stream: _firestore
           .collection('project_tasks')
           .where('projectId', isEqualTo: _projectId)
           .where('status', isEqualTo: 'completed')
-          .orderBy('completedAt', descending: true) // STACK (Newest First)
+          .orderBy('completedAt', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        if (!snapshot.hasData) {
+          return const Center(
+              child: CircularProgressIndicator());
+        }
         final docs = snapshot.data!.docs;
 
         if (docs.isEmpty) {
-          return Center(child: Text("No completed works", style: GoogleFonts.poppins(color: Colors.grey)));
+          return Center(
+              child: Text("No completed works",
+                  style: GoogleFonts.poppins(
+                      color: Colors.grey)));
         }
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: docs.length,
           itemBuilder: (context, index) {
-            final data = docs[index].data() as Map<String, dynamic>;
-            
+            final data =
+                docs[index].data() as Map<String, dynamic>;
+
             Timestamp? startTs = data['startedAt'];
             Timestamp? endTs = data['completedAt'];
 
             String startStr = _formatTimestamp(startTs);
             String endStr = _formatTimestamp(endTs);
 
-            // Fetch images
             List<dynamic> endImages = data['endImages'] ?? [];
 
             return Card(
@@ -512,26 +493,37 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
               child: Padding(
                 padding: const EdgeInsets.all(12.0),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.check_circle, color: Colors.green),
+                        const Icon(Icons.check_circle,
+                            color: Colors.green),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            data['taskName'] ?? '', 
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)
+                            data['taskName'] ?? '',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16),
                           ),
                         ),
-                        const Icon(Icons.verified, color: Colors.blue),
+                        const Icon(Icons.verified,
+                            color: Colors.blue),
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Text("Start: $startStr | End: $endStr", style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                    Text("Start: $startStr | End: $endStr",
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey)),
                     if (endImages.isNotEmpty) ...[
                       const SizedBox(height: 10),
-                      const Text("Submitted Photos:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      const Text("Submitted Photos:",
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12)),
                       const SizedBox(height: 5),
                       SizedBox(
                         height: 70,
@@ -540,12 +532,23 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                           itemCount: endImages.length,
                           itemBuilder: (context, imgIndex) {
                             return Padding(
-                              padding: const EdgeInsets.only(right: 8.0),
+                              padding:
+                                  const EdgeInsets.only(
+                                      right: 8.0),
                               child: GestureDetector(
-                                onTap: () => _showFullScreenImage(endImages[imgIndex]),
+                                onTap: () =>
+                                    _showFullScreenImage(
+                                        endImages[
+                                            imgIndex]),
                                 child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: Image.network(endImages[imgIndex], width: 70, height: 70, fit: BoxFit.cover),
+                                  borderRadius:
+                                      BorderRadius.circular(
+                                          6),
+                                  child: Image.network(
+                                      endImages[imgIndex],
+                                      width: 70,
+                                      height: 70,
+                                      fit: BoxFit.cover),
                                 ),
                               ),
                             );
@@ -563,6 +566,100 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
+  Future<int> _getCompletedTasksCount() async {
+    final snap = await _firestore
+        .collection('project_tasks')
+        .where('projectId', isEqualTo: _projectId)
+        .where('status', isEqualTo: 'completed')
+        .limit(1)
+        .get();
+    return snap.docs.length;
+  }
+
+  Future<int> _getOngoingTasksCount() async {
+    final snap = await _firestore
+        .collection('project_tasks')
+        .where('projectId', isEqualTo: _projectId)
+        .where('status', whereIn: ['ongoing', 'pending_approval'])
+        .limit(1)
+        .get();
+    return snap.docs.length;
+  }
+
+  Future<int> _getTodoTasksCount() async {
+    final snap = await _firestore
+        .collection('project_tasks')
+        .where('projectId', isEqualTo: _projectId)
+        .where('status', isEqualTo: 'todo')
+        .limit(1)
+        .get();
+    return snap.docs.length;
+  }
+
+  Future<void> _requestProjectCompletion() async {
+    setState(() => _isCompletionRequesting = true);
+    try {
+      final completed = await _getCompletedTasksCount();
+      final ongoing = await _getOngoingTasksCount();
+      final todo = await _getTodoTasksCount();
+
+      if (completed == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Complete at least one work before requesting project completion.'),
+          ),
+        );
+        return;
+      }
+
+      if (ongoing > 0 || todo > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'All works must be completed or deleted. No To Do or Ongoing tasks allowed when requesting completion.'),
+          ),
+        );
+        return;
+      }
+
+      // Create completion request
+      await _firestore
+          .collection('project_completion_requests')
+          .add({
+        'projectId': _projectId,
+        'userId': _userId,
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      // Send a chat message to admin
+      await _firestore.collection('project_chats').add({
+        'projectId': _projectId,
+        'senderId': _userId,
+        'senderRole': 'user',
+        'message':
+            'User has requested to mark this project as completed.',
+        'type': 'system_completion_request',
+        'createdAt': FieldValue.serverTimestamp(),
+        'isReadByAdmin': false,
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Completion request sent to admin, and message posted in chat.')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error sending request: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isCompletionRequesting = false);
+    }
+  }
+
+  // FINANCES TAB: money request + completion request (with validations)
   Widget _transactionsTab() {
     return Column(
       children: [
@@ -572,36 +669,65 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
             onPressed: _showRequestAmountDialog,
             icon: const Icon(Icons.add_card),
             label: const Text('Request Amount from Admin'),
-            style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 50),
+            ),
           ),
         ),
-        Expanded(
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _firestore.collection('transactions').where('projectId', isEqualTo: _projectId).snapshots(),
-            builder: (context, snap) {
-              if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-              final docs = snap.data!.docs;
-              return ListView.builder(
-                itemCount: docs.length,
-                itemBuilder: (context, i) {
-                  final d = docs[i].data();
-                  final status = d['status'] ?? 'pending';
-                  return ListTile(
-                    title: Text(d['title']),
-                    subtitle: Text('₹${d['amount']} • Status: $status'),
-                    trailing: Icon(status == 'pending' ? Icons.hourglass_empty : Icons.check_circle, 
-                        color: status == 'pending' ? Colors.orange : Colors.green),
-                  );
-                },
-              );
-            },
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: ElevatedButton.icon(
+            onPressed:
+                _isCompletionRequesting ? null : _requestProjectCompletion,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(double.infinity, 50),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            icon: _isCompletionRequesting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.flag),
+            label: Text(
+              _isCompletionRequesting
+                  ? 'Sending completion request...'
+                  : 'Request Project Completion',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
-        )
+        ),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Text(
+            'To request completion:\n'
+            '• At least one work must be completed\n'
+            '• No works in To Do\n'
+            '• No works in Ongoing / Pending Approval\n'
+            'A completion message will be sent to admin in chat.',
+            style: GoogleFonts.poppins(
+                fontSize: 11, color: Colors.grey[700]),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Expanded(child: Container()),
       ],
     );
   }
 
-  Widget _feedbackTab() => ProjectChatSection(projectId: _projectId, currentRole: 'user');
+  Widget _billsTabWrapper() => _billsTab();
+
+  Widget _feedbackTab() =>
+      ProjectChatSection(projectId: _projectId, currentRole: 'user');
 
   SliverPersistentHeader _buildTabBar() {
     return SliverPersistentHeader(
@@ -630,12 +756,14 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
           slivers: [
             SliverToBoxAdapter(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 12),
                 color: primaryMaroon,
                 child: Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                      icon: const Icon(Icons.arrow_back,
+                          color: Colors.white),
                       onPressed: () => Navigator.pop(context),
                     ),
                     const SizedBox(width: 8),
@@ -657,7 +785,12 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
             SliverFillRemaining(
               child: TabBarView(
                 controller: _tabController,
-                children: [_activitiesTab(), _transactionsTab(), _billsTab(), _feedbackTab()],
+                children: [
+                  _activitiesTab(),
+                  _transactionsTab(),
+                  _billsTabWrapper(),
+                  _feedbackTab(),
+                ],
               ),
             ),
           ],
@@ -675,114 +808,19 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
   @override
   double get maxExtent => _tabBar.preferredSize.height;
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(color: Colors.white, child: _tabBar);
   }
+
   @override
   bool shouldRebuild(covariant _TabBarDelegate oldDelegate) => false;
 }
 
 // =========================================================
-// 1. TODO TASK CARD (UPDATED - NO IMAGES)
+// ONGOING TASK CARD (same as before)
 // =========================================================
-class TodoTaskCard extends StatefulWidget {
-  final String taskId;
-  final String taskName;
-  final String userId;
-  final String projectId;
 
-  const TodoTaskCard({
-    super.key,
-    required this.taskId,
-    required this.taskName,
-    required this.userId,
-    required this.projectId,
-  });
-
-  @override
-  State<TodoTaskCard> createState() => _TodoTaskCardState();
-}
-
-class _TodoTaskCardState extends State<TodoTaskCard> {
-  bool _isStarting = false;
-
-  Future<void> _deleteTask() async {
-    bool confirm = await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Delete Work"),
-        content: const Text("Are you sure you want to delete this work?"),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Delete", style: TextStyle(color: Colors.red))),
-        ],
-      ),
-    ) ?? false;
-
-    if (confirm) {
-      await FirebaseFirestore.instance.collection('project_tasks').doc(widget.taskId).delete();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Work deleted")));
-    }
-  }
-
-  Future<void> _startTask() async {
-    setState(() => _isStarting = true);
-    try {
-      // Just update status and timestamp, NO IMAGES
-      await FirebaseFirestore.instance.collection('project_tasks').doc(widget.taskId).update({
-        'status': 'ongoing',
-        'startedAt': FieldValue.serverTimestamp(),
-      });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Work Started! Moved to Ongoing.")));
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
-    } finally {
-      if (mounted) setState(() => _isStarting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      color: Colors.white,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(child: Text(widget.taskName, style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.black87))),
-                IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: _deleteTask),
-              ],
-            ),
-            Text("Not started yet", style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600], fontStyle: FontStyle.italic)),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 45,
-              child: ElevatedButton(
-                onPressed: _isStarting ? null : _startTask,
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4285F4), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)), elevation: 0),
-                child: _isStarting 
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : Text("Start", style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// =========================================================
-// 2. ONGOING TASK CARD (UPDATED - LIMIT 5, MANDATORY UPLOAD)
-// =========================================================
 class OngoingTaskCard extends StatefulWidget {
   final String taskId;
   final String taskName;
@@ -811,16 +849,14 @@ class _OngoingTaskCardState extends State<OngoingTaskCard> {
   bool _isUploading = false;
 
   Future<void> _pickImages() async {
-    // FIX: ADD images to existing list, LIMIT 5
-    final List<XFile> images = await _picker.pickMultiImage(); 
-    
+    final List<XFile> images = await _picker.pickMultiImage();
     if (images.isNotEmpty) {
       setState(() {
         _selectedImages.addAll(images);
-        // Enforce limit of 5
         if (_selectedImages.length > 5) {
           _selectedImages = _selectedImages.sublist(0, 5);
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Maximum 5 images allowed")));
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Maximum 5 images allowed")));
         }
       });
     }
@@ -834,29 +870,41 @@ class _OngoingTaskCardState extends State<OngoingTaskCard> {
 
   Future<void> _deleteTask() async {
     bool confirm = await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Delete Work"),
-        content: const Text("Are you sure you want to delete this work?"),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Delete", style: TextStyle(color: Colors.red))),
-        ],
-      ),
-    ) ?? false;
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("Delete Work"),
+            content: const Text(
+                "Are you sure you want to delete this work?"),
+            actions: [
+              TextButton(
+                  onPressed: () =>
+                      Navigator.pop(context, false),
+                  child: const Text("Cancel")),
+              TextButton(
+                  onPressed: () =>
+                      Navigator.pop(context, true),
+                  child: const Text("Delete",
+                      style: TextStyle(color: Colors.red))),
+            ],
+          ),
+        ) ??
+        false;
     if (confirm) {
-      await FirebaseFirestore.instance.collection('project_tasks').doc(widget.taskId).delete();
+      await FirebaseFirestore.instance
+          .collection('project_tasks')
+          .doc(widget.taskId)
+          .delete();
     }
   }
 
   Future<void> _sendForApproval() async {
-    // VALIDATION: Check if images are selected
     if (_selectedImages.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Please upload an image before sending for approval"),
+          content: Text(
+              "Please upload an image before sending for approval"),
           backgroundColor: Colors.red,
-        )
+        ),
       );
       return;
     }
@@ -865,18 +913,26 @@ class _OngoingTaskCardState extends State<OngoingTaskCard> {
     try {
       List<String> uploadedUrls = [];
       for (var image in _selectedImages) {
-        String? url = await CloudinaryService.uploadImage(imageFile: image, userId: widget.userId, projectId: widget.projectId);
+        String? url = await CloudinaryService.uploadImage(
+            imageFile: image,
+            userId: widget.userId,
+            projectId: widget.projectId);
         if (url != null) uploadedUrls.add(url);
       }
-      
-      await FirebaseFirestore.instance.collection('project_tasks').doc(widget.taskId).update({
+
+      await FirebaseFirestore.instance
+          .collection('project_tasks')
+          .doc(widget.taskId)
+          .update({
         'status': 'pending_approval',
         'endImages': uploadedUrls,
       });
-      
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Sent for approval!")));
+
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Sent for approval!")));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: $e")));
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
@@ -889,95 +945,157 @@ class _OngoingTaskCardState extends State<OngoingTaskCard> {
     return Card(
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8)),
       color: Colors.white,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment:
+                  MainAxisAlignment.spaceBetween,
               children: [
-                Expanded(child: Text(widget.taskName, style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.black87))),
-                IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: _deleteTask),
+                Expanded(
+                    child: Text(widget.taskName,
+                        style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87))),
+                IconButton(
+                    icon: const Icon(Icons.delete_outline,
+                        color: Colors.red, size: 20),
+                    onPressed: _deleteTask),
               ],
             ),
-            Text(widget.dateDisplay, style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600])),
+            Text(widget.dateDisplay,
+                style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.grey[600])),
             const SizedBox(height: 16),
-            
             if (!isPending) ...[
-              Text("Upload Completion Photo (Max 5):", style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87)),
+              Text("Upload Completion Photo (Max 5):",
+                  style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.black87)),
               const SizedBox(height: 8),
               Row(
                 children: [
                   ElevatedButton(
                     onPressed: _pickImages,
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0E0E0), foregroundColor: Colors.black, elevation: 0),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            const Color(0xFFE0E0E0),
+                        foregroundColor: Colors.black,
+                        elevation: 0),
                     child: const Text("Choose File"),
                   ),
                   const SizedBox(width: 10),
-                  Expanded(child: Text(_selectedImages.isEmpty ? "No file chosen" : "${_selectedImages.length} files selected", style: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 13), overflow: TextOverflow.ellipsis)),
+                  Expanded(
+                    child: Text(
+                      _selectedImages.isEmpty
+                          ? "No file chosen"
+                          : "${_selectedImages.length} files selected",
+                      style: GoogleFonts.poppins(
+                          color: Colors.grey[600],
+                          fontSize: 13),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
               ),
-              
-              if (_selectedImages.isNotEmpty) 
+              if (_selectedImages.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(top: 10, bottom: 16), 
+                  padding: const EdgeInsets.only(
+                      top: 10, bottom: 16),
                   child: Wrap(
-                    spacing: 8, 
+                    spacing: 8,
                     runSpacing: 8,
-                    children: _selectedImages.asMap().entries.map((entry) {
+                    children: _selectedImages
+                        .asMap()
+                        .entries
+                        .map((entry) {
                       int idx = entry.key;
                       XFile img = entry.value;
                       return Stack(
                         children: [
                           ClipRRect(
-                            borderRadius: BorderRadius.circular(4), 
-                            child: kIsWeb 
-                                ? Image.network(img.path, width: 60, height: 60, fit: BoxFit.cover) 
-                                : Image.file(File(img.path), width: 60, height: 60, fit: BoxFit.cover)
+                            borderRadius:
+                                BorderRadius.circular(4),
+                            child: kIsWeb
+                                ? Image.network(img.path,
+                                    width: 60,
+                                    height: 60,
+                                    fit: BoxFit.cover)
+                                : Image.file(File(img.path),
+                                    width: 60,
+                                    height: 60,
+                                    fit: BoxFit.cover),
                           ),
                           Positioned(
                             right: 0,
                             top: 0,
                             child: GestureDetector(
-                              onTap: () => _removeImage(idx),
+                              onTap: () =>
+                                  _removeImage(idx),
                               child: Container(
                                 color: Colors.black54,
-                                child: const Icon(Icons.close, color: Colors.white, size: 16),
+                                child: const Icon(Icons.close,
+                                    color: Colors.white,
+                                    size: 16),
                               ),
                             ),
                           )
                         ],
                       );
-                    }).toList()
-                  )
+                    }).toList(),
+                  ),
                 )
-              else 
+              else
                 const SizedBox(height: 16),
-
               SizedBox(
                 width: double.infinity,
                 height: 45,
                 child: ElevatedButton(
-                  onPressed: _isUploading ? null : _sendForApproval,
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)), elevation: 0),
-                  child: _isUploading 
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text("Send for Approval", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  onPressed:
+                      _isUploading ? null : _sendForApproval,
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      shape: RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.circular(6)),
+                      elevation: 0),
+                  child: _isUploading
+                      ? const CircularProgressIndicator(
+                          color: Colors.white)
+                      : const Text("Send for Approval",
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontWeight:
+                                  FontWeight.bold)),
                 ),
               ),
             ] else ...[
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+                decoration: BoxDecoration(
+                    color: Colors.orange
+                        .withOpacity(0.1),
+                    borderRadius:
+                        BorderRadius.circular(6)),
                 child: const Row(
                   children: [
-                    Icon(Icons.hourglass_bottom, color: Colors.orange),
+                    Icon(Icons.hourglass_bottom,
+                        color: Colors.orange),
                     SizedBox(width: 10),
-                    Text("Pending Admin Approval", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+                    Text("Pending Admin Approval",
+                        style: TextStyle(
+                            color: Colors.orange,
+                            fontWeight:
+                                FontWeight.bold)),
                   ],
                 ),
               )

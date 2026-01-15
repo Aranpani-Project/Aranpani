@@ -18,6 +18,33 @@ class CreateProjectScreen extends StatefulWidget {
   State<CreateProjectScreen> createState() => _CreateProjectScreenState();
 }
 
+class FeatureEntry {
+  final String key;   // 'lingam', 'nandhi', 'avudai', 'shed'
+  final String label; // 'Lingam', ...
+  String condition;   // 'old' or 'new'
+  String? dimension;  // '2 feet', '3 feet', 'custom', or null
+  String? amount;     // string amount
+  String? customSize; // when dimension == 'custom'
+
+  FeatureEntry({
+    required this.key,
+    required this.label,
+    this.condition = 'old',
+    this.dimension,
+    this.amount,
+    this.customSize,
+  });
+
+  Map<String, dynamic> toMap() => {
+        'key': key,
+        'label': label,
+        'condition': condition,
+        'dimension': dimension,
+        'amount': amount,
+        'customSize': customSize,
+      };
+}
+
 class _CreateProjectScreenState extends State<CreateProjectScreen> {
   final _pageController = PageController();
   int _currentPage = 0;
@@ -31,17 +58,10 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   final TextEditingController _contactPhoneController = TextEditingController();
   final TextEditingController _estimatedAmountController =
       TextEditingController();
-  final TextEditingController _customDimensionController =
-      TextEditingController();
-  final TextEditingController _featureAmountController =
-      TextEditingController();
 
   DateTime? _selectedDate;
-  String? _selectedFeature;
-  String? _type;
-  String? _dimension;
 
-  /// List of **local paths** returned by ImagePickerWidget
+  /// All local image paths from picker
   List<String> _selectedImages = [];
 
   bool _isLoading = false;
@@ -53,10 +73,19 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
     {'name': '4 feet', 'amount': 100000},
   ];
 
+  late List<FeatureEntry> _features;
+  FeatureEntry? _selectedFeatureEntry; // the one whose options are expanded
+
   @override
   void initState() {
     super.initState();
     _fetchContractorData();
+    _features = [
+      FeatureEntry(key: 'lingam', label: 'Lingam'),
+      FeatureEntry(key: 'nandhi', label: 'Nandhi'),
+      FeatureEntry(key: 'avudai', label: 'Avudai'),
+      FeatureEntry(key: 'shed', label: 'Shed'),
+    ];
   }
 
   Future<void> _fetchContractorData() async {
@@ -115,14 +144,21 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
     }
 
     if (_currentPage == 1) {
-      if (_selectedFeature == null) {
-        return _showWarning('Please select a feature type');
+      final newOnes = _features.where((f) => f.condition == 'new').toList();
+      if (newOnes.isEmpty) {
+        return _showWarning('At least one feature must be marked as New.');
       }
-      if (_type == null) {
-        return _showWarning('Please select condition type');
-      }
-      if (_type == 'new' && _dimension == null) {
-        return _showWarning('Please select a dimension');
+      for (final f in newOnes) {
+        if (f.dimension == null || f.dimension!.isEmpty) {
+          return _showWarning('Select dimension for ${f.label}.');
+        }
+        if (f.dimension == 'custom' &&
+            (f.customSize == null || f.customSize!.trim().isEmpty)) {
+          return _showWarning('Enter custom size for ${f.label}.');
+        }
+        if (f.amount == null || f.amount!.trim().isEmpty) {
+          return _showWarning('Enter required amount for ${f.label}.');
+        }
       }
       return true;
     }
@@ -225,6 +261,9 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         return;
       }
 
+      final List<Map<String, dynamic>> featureMaps =
+          _features.map((f) => f.toMap()).toList();
+
       await FirebaseFirestore.instance.collection('projects').doc(rawId).set({
         'projectId': projectDisplayId,
         'userId': user.uid,
@@ -237,12 +276,8 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         'visitDate': _selectedDate != null
             ? Timestamp.fromDate(_selectedDate!)
             : null,
-        'feature': _selectedFeature,
-        'featureType': _type,
-        'featureDimension': _dimension == 'custom'
-            ? _customDimensionController.text.trim()
-            : _dimension,
-        'featureAmount': _featureAmountController.text.trim(),
+        // store all features
+        'features': featureMaps,
         'contactName': _contactNameController.text.trim(),
         'contactPhone': _contactPhoneController.text.trim(),
         'estimatedAmount': _estimatedAmountController.text.trim(),
@@ -448,94 +483,259 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
     );
   }
 
+  // --------- FEATURE PAGE WITH FOUR ENTRIES ---------
   Widget _buildFeaturePage() {
     return _buildFormContainer(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _title('Select Feature', 'Choose structure type'),
+          _title('Select Features', 'Set condition for each structure'),
           const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              SizedBox(
-                width: MediaQuery.of(context).size.width * 0.38,
-                child: _featureButton('Lingam', Icons.temple_hindu),
-              ),
-              SizedBox(
-                width: MediaQuery.of(context).size.width * 0.38,
-                child: _featureButton('Avudai', Icons.architecture),
-              ),
-              SizedBox(
-                width: MediaQuery.of(context).size.width * 0.38,
-                child: _featureButton('Nandhi', Icons.pets),
-              ),
-            ],
-          ),
-          if (_selectedFeature != null) _buildFeatureDetails(),
+          ..._features.map(_buildFeatureCard),
         ],
       ),
     );
   }
 
-  Widget _buildFeatureDetails() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 20),
-        Text(
-          'Condition Type',
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(child: _buildRadioOption('Old/Existing', 'old')),
-            const SizedBox(width: 8),
-            Expanded(child: _buildRadioOption('New Structure', 'new')),
-          ],
-        ),
-        if (_type == 'new') ...[
-          const SizedBox(height: 20),
-          Text(
-            'Choose Dimensions',
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-            ),
+  Widget _buildFeatureCard(FeatureEntry entry) {
+    final bool expanded = _selectedFeatureEntry?.key == entry.key;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFF5E6CA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                entry.label,
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF3E2723),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: entry.condition == 'old'
+                      ? Colors.grey.shade200
+                      : Colors.green.shade100,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  entry.condition == 'old' ? 'Old' : 'New',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: entry.condition == 'old'
+                        ? Colors.grey.shade800
+                        : Colors.green.shade800,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
-          ..._predefinedDimensions.map(
-            (dim) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _buildDimensionOption(
-                dim['name'],
-                'Estimate: Rs ${dim['amount']}',
-                dim['name'],
+          Row(
+            children: [
+              Expanded(
+                child: _buildFeatureConditionButton(
+                  label: 'Old / Existing',
+                  isSelected: entry.condition == 'old',
+                  onTap: () {
+                    setState(() {
+                      entry.condition = 'old';
+                      entry.dimension = null;
+                      entry.amount = null;
+                      entry.customSize = null;
+                      if (_selectedFeatureEntry?.key == entry.key) {
+                        _selectedFeatureEntry = null;
+                      }
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildFeatureConditionButton(
+                  label: 'New Structure',
+                  isSelected: entry.condition == 'new',
+                  onTap: () {
+                    setState(() {
+                      entry.condition = 'new';
+                      _selectedFeatureEntry = entry;
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+          if (entry.condition == 'new') ...[
+            const SizedBox(height: 12),
+            Text(
+              'Select Dimensions',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
               ),
             ),
-          ),
-          _buildDimensionOption('Other', 'Custom Size', 'custom'),
-          if (_dimension == 'custom') ...[
-            const SizedBox(height: 12),
-            _plainTextField(
-              _customDimensionController,
-              'Size (e.g. 5 ft)',
+            const SizedBox(height: 8),
+            ..._predefinedDimensions.map((dim) {
+              final String name = dim['name'];
+              final int amount = dim['amount'];
+              return _buildFeatureDimensionTile(
+                entry: entry,
+                value: name,
+                title: name,
+                subtitle: 'Estimate: ₹$amount',
+                onSelected: () {
+                  setState(() {
+                    entry.dimension = name;
+                    entry.customSize = null;
+                    entry.amount = amount.toString();
+                  });
+                },
+              );
+            }),
+            _buildFeatureDimensionTile(
+              entry: entry,
+              value: 'custom',
+              title: 'Other',
+              subtitle: 'Custom Size & Amount',
+              onSelected: () {
+                setState(() {
+                  entry.dimension = 'custom';
+                  entry.customSize ??= '';
+                  entry.amount ??= '';
+                });
+              },
             ),
-            _plainTextField(
-              _featureAmountController,
-              'Required Amount (Rs)',
-              keyboard: TextInputType.number,
-            ),
+            if (entry.dimension == 'custom') ...[
+              const SizedBox(height: 8),
+              TextField(
+                decoration: const InputDecoration(
+                  labelText: 'Size (e.g. 5 ft)',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (v) => entry.customSize = v,
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                decoration: const InputDecoration(
+                  labelText: 'Required Amount (Rs)',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+                onChanged: (v) => entry.amount = v,
+              ),
+            ],
           ],
         ],
-      ],
+      ),
     );
   }
+
+  Widget _buildFeatureConditionButton({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFF5E6CA) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color:
+                isSelected ? const Color(0xFF5D4037) : const Color(0xFFF5E6CA),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isSelected
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_off,
+              size: 18,
+              color: const Color(0xFF5D4037),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeatureDimensionTile({
+    required FeatureEntry entry,
+    required String value,
+    required String title,
+    required String subtitle,
+    required VoidCallback onSelected,
+  }) {
+    final bool selected = entry.dimension == value;
+    return InkWell(
+      onTap: onSelected,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFF5E6CA) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color:
+                selected ? const Color(0xFF5D4037) : const Color(0xFFF5E6CA),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              selected ? Icons.check_circle : Icons.circle_outlined,
+              size: 20,
+              color: const Color(0xFF5D4037),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  // --------------------------
 
   Widget _buildContactPage() {
     return _buildFormContainer(
@@ -588,7 +788,6 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
           ImagePickerWidget(
             maxImages: 10,
             onImagesSelected: (imgs) {
-              // imgs must be List<String> of local file paths
               for (final p in imgs) {
                 debugPrint('Picked path: $p');
               }
@@ -664,135 +863,6 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _featureButton(String title, IconData icon) {
-    final sel = _selectedFeature == title.toLowerCase();
-    return InkWell(
-      onTap: () => setState(() {
-        _selectedFeature = title.toLowerCase();
-        _type = null;
-      }),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: sel ? const Color(0xFFF5E6CA) : Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: sel ? const Color(0xFF5D4037) : const Color(0xFFF5E6CA),
-            width: 1.5,
-          ),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              icon,
-              color: sel ? const Color(0xFF5D4037) : const Color(0xFF8D6E63),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: sel ? const Color(0xFF3E2723) : const Color(0xFF8D6E63),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRadioOption(String title, String value) {
-    final sel = _type == value;
-    return InkWell(
-      onTap: () => setState(() {
-        _type = value;
-        _dimension = null;
-      }),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-        decoration: BoxDecoration(
-          color: sel ? const Color(0xFFF5E6CA) : Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: sel ? const Color(0xFF5D4037) : const Color(0xFFF5E6CA),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              sel ? Icons.radio_button_checked : Icons.radio_button_off,
-              size: 18,
-              color: const Color(0xFF5D4037),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(fontSize: 12),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDimensionOption(String title, String subtitle, String value) {
-    final sel = _dimension == value;
-    return InkWell(
-      onTap: () => setState(() {
-        _dimension = value;
-        if (value != 'custom') {
-          final d =
-              _predefinedDimensions.firstWhere((x) => x['name'] == value);
-          _featureAmountController.text = d['amount'].toString();
-          _estimatedAmountController.text = d['amount'].toString();
-        }
-      }),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 6),
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: sel ? const Color(0xFFF5E6CA) : Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: sel ? const Color(0xFF5D4037) : const Color(0xFFF5E6CA),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              sel ? Icons.check_circle : Icons.circle_outlined,
-              size: 20,
-              color: const Color(0xFF5D4037),
-            ),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
