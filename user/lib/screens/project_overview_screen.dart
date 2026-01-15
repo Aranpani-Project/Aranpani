@@ -44,10 +44,6 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     super.dispose();
   }
 
-  String _formatDate(DateTime date) {
-    return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
-  }
-  
   String _formatTimestamp(Timestamp? timestamp) {
     if (timestamp == null) return "N/A";
     DateTime date = timestamp.toDate();
@@ -150,7 +146,6 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
-  // UPDATED: Only asks for Name
   Future<void> _showAddWorkDialog() async {
     final TextEditingController nameCtrl = TextEditingController();
 
@@ -199,7 +194,6 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                       'taskName': nameCtrl.text,
                       'status': 'todo',
                       'createdAt': FieldValue.serverTimestamp(),
-                      // Dates are now captured during state changes
                     });
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Work Added Successfully!')));
@@ -461,7 +455,6 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
             final docId = docs[index].id;
             final status = data['status'] ?? 'ongoing';
             
-            // Display Start date if available
             Timestamp? startTs = data['startedAt'];
             String dateDisplay = startTs != null ? "Started: ${_formatTimestamp(startTs)}" : "Date not captured";
 
@@ -500,7 +493,6 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
             
-            // Extract Dates
             Timestamp? startTs = data['startedAt'];
             Timestamp? endTs = data['completedAt'];
 
@@ -652,7 +644,7 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
 }
 
 // =========================================================
-// 1. TODO TASK CARD (UPDATED)
+// 1. TODO TASK CARD (UPDATED - Accumulative Image Selection)
 // =========================================================
 class TodoTaskCard extends StatefulWidget {
   final String taskId;
@@ -678,15 +670,26 @@ class _TodoTaskCardState extends State<TodoTaskCard> {
   bool _isUploading = false;
 
   Future<void> _pickImages() async {
-    final List<XFile> images = await _picker.pickMultiImage(limit: 5); 
+    // FIX: ADD images to existing list instead of replacing
+    final List<XFile> images = await _picker.pickMultiImage(); 
+    
     if (images.isNotEmpty) {
-      if (images.length > 5) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Maximum 5 images allowed")));
-        setState(() => _selectedImages = images.sublist(0, 5));
-      } else {
-        setState(() => _selectedImages = images);
-      }
+      setState(() {
+        _selectedImages.addAll(images);
+        // Enforce limit of 10
+        if (_selectedImages.length > 10) {
+          _selectedImages = _selectedImages.sublist(0, 10);
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Maximum 10 images allowed")));
+        }
+      });
     }
+  }
+
+  // Helper to remove an image if user wants
+  void _removeImage(int index) {
+    setState(() {
+      _selectedImages.removeAt(index);
+    });
   }
 
   Future<void> _deleteTask() async {
@@ -721,11 +724,10 @@ class _TodoTaskCardState extends State<TodoTaskCard> {
         if (url != null) uploadedUrls.add(url);
       }
       
-      // CAPTURE START DATE HERE
       await FirebaseFirestore.instance.collection('project_tasks').doc(widget.taskId).update({
         'status': 'ongoing',
         'startImages': uploadedUrls,
-        'startedAt': FieldValue.serverTimestamp(), // Capture current time as Start Date
+        'startedAt': FieldValue.serverTimestamp(),
       });
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Work Started! Moved to Ongoing.")));
     } catch (e) {
@@ -754,7 +756,6 @@ class _TodoTaskCardState extends State<TodoTaskCard> {
                 IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: _deleteTask),
               ],
             ),
-            // No Date displayed here as it hasn't started
             Text("Not started yet", style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600], fontStyle: FontStyle.italic)),
             const SizedBox(height: 16),
             Text("Upload Start Photo:", style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87)),
@@ -775,14 +776,32 @@ class _TodoTaskCardState extends State<TodoTaskCard> {
                 padding: const EdgeInsets.only(top: 10), 
                 child: Wrap(
                   spacing: 8, 
-                  children: _selectedImages.map((img) => 
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4), 
-                      child: kIsWeb 
-                          ? Image.network(img.path, width: 50, height: 50, fit: BoxFit.cover) 
-                          : Image.file(File(img.path), width: 50, height: 50, fit: BoxFit.cover)
-                    )
-                  ).toList()
+                  runSpacing: 8,
+                  children: _selectedImages.asMap().entries.map((entry) {
+                    int idx = entry.key;
+                    XFile img = entry.value;
+                    return Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4), 
+                          child: kIsWeb 
+                              ? Image.network(img.path, width: 60, height: 60, fit: BoxFit.cover) 
+                              : Image.file(File(img.path), width: 60, height: 60, fit: BoxFit.cover)
+                        ),
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          child: GestureDetector(
+                            onTap: () => _removeImage(idx),
+                            child: Container(
+                              color: Colors.black54,
+                              child: const Icon(Icons.close, color: Colors.white, size: 16),
+                            ),
+                          ),
+                        )
+                      ],
+                    );
+                  }).toList()
                 )
               ),
             const SizedBox(height: 16),
@@ -805,7 +824,7 @@ class _TodoTaskCardState extends State<TodoTaskCard> {
 }
 
 // =========================================================
-// 2. ONGOING TASK CARD (UPDATED)
+// 2. ONGOING TASK CARD (UPDATED - Accumulative Image Selection)
 // =========================================================
 class OngoingTaskCard extends StatefulWidget {
   final String taskId;
@@ -835,15 +854,26 @@ class _OngoingTaskCardState extends State<OngoingTaskCard> {
   bool _isUploading = false;
 
   Future<void> _pickImages() async {
-    final List<XFile> images = await _picker.pickMultiImage(limit: 5); 
+    // FIX: ADD images to existing list instead of replacing
+    final List<XFile> images = await _picker.pickMultiImage(); 
+    
     if (images.isNotEmpty) {
-      if (images.length > 5) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Maximum 5 images allowed")));
-        setState(() => _selectedImages = images.sublist(0, 5));
-      } else {
-        setState(() => _selectedImages = images);
-      }
+      setState(() {
+        _selectedImages.addAll(images);
+        // Enforce limit of 10
+        if (_selectedImages.length > 10) {
+          _selectedImages = _selectedImages.sublist(0, 10);
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Maximum 10 images allowed")));
+        }
+      });
     }
+  }
+
+  // Helper to remove an image if user wants
+  void _removeImage(int index) {
+    setState(() {
+      _selectedImages.removeAt(index);
+    });
   }
 
   Future<void> _deleteTask() async {
@@ -925,7 +955,42 @@ class _OngoingTaskCardState extends State<OngoingTaskCard> {
                   Expanded(child: Text(_selectedImages.isEmpty ? "No file chosen" : "${_selectedImages.length} files selected", style: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 13), overflow: TextOverflow.ellipsis)),
                 ],
               ),
-              const SizedBox(height: 16),
+              if (_selectedImages.isNotEmpty) 
+                Padding(
+                  padding: const EdgeInsets.only(top: 10, bottom: 16), 
+                  child: Wrap(
+                    spacing: 8, 
+                    runSpacing: 8,
+                    children: _selectedImages.asMap().entries.map((entry) {
+                      int idx = entry.key;
+                      XFile img = entry.value;
+                      return Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4), 
+                            child: kIsWeb 
+                                ? Image.network(img.path, width: 60, height: 60, fit: BoxFit.cover) 
+                                : Image.file(File(img.path), width: 60, height: 60, fit: BoxFit.cover)
+                          ),
+                          Positioned(
+                            right: 0,
+                            top: 0,
+                            child: GestureDetector(
+                              onTap: () => _removeImage(idx),
+                              child: Container(
+                                color: Colors.black54,
+                                child: const Icon(Icons.close, color: Colors.white, size: 16),
+                              ),
+                            ),
+                          )
+                        ],
+                      );
+                    }).toList()
+                  )
+                )
+              else 
+                const SizedBox(height: 16),
+
               SizedBox(
                 width: double.infinity,
                 height: 45,
