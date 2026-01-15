@@ -27,7 +27,7 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
 
   late Map<String, dynamic> temple;
   int selectedTab = 0;
-  bool isDeleting = false; // To show a loader during deletion
+  bool isDeleting = false; 
 
   @override
   void initState() {
@@ -46,17 +46,13 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
     return "${date.day}/${date.month}/${date.year}";
   }
 
-  /// PERFORMS CASCADE DELETE:
-  /// 1. Deletes all tasks associated with this project.
-  /// 2. Deletes all bills associated with this project.
-  /// 3. Deletes the project document itself.
   Future<void> _deleteProject() async {
     final bool? confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("Delete Project?"),
         content: const Text(
-            "This will permanently delete this project, all associated tasks, and bills for both you and the user. This action cannot be undone."),
+            "This will permanently delete this project, all associated tasks, and bills. This action cannot be undone."),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -78,7 +74,6 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
       final batch = FirebaseFirestore.instance.batch();
       final String projectId = temple['id'];
 
-      // 1. Find and delete all tasks for this project
       final tasksQuery = await FirebaseFirestore.instance
           .collection('project_tasks')
           .where('projectId', isEqualTo: projectId)
@@ -87,7 +82,6 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
         batch.delete(doc.reference);
       }
 
-      // 2. Find and delete all bills for this project
       final billsQuery = await FirebaseFirestore.instance
           .collection('bills')
           .where('projectId', isEqualTo: projectId)
@@ -96,15 +90,12 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
         batch.delete(doc.reference);
       }
 
-      // 3. Delete the main project document
       final projectRef = FirebaseFirestore.instance.collection('projects').doc(projectId);
       batch.delete(projectRef);
 
-      // Commit the batch
       await batch.commit();
 
-      // Notify parent and exit
-      widget.onUpdated(null); // Passing null tells parent it was deleted
+      widget.onUpdated(null); 
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -297,7 +288,7 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
               children: [
                 _buildTaskList('todo'),
                 _buildOngoingList(),
-                _buildTaskList('completed'),
+                _buildCompletedList(),
               ],
             ),
           ),
@@ -306,12 +297,14 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
     );
   }
 
+  // UPDATED: Added orderBy('createdAt', descending: false)
   Widget _buildTaskList(String status) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('project_tasks')
           .where('projectId', isEqualTo: temple['id'])
           .where('status', isEqualTo: status)
+          .orderBy('createdAt', descending: false) // Newest at Bottom
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData)
@@ -330,17 +323,6 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
-            
-            String dateText = "Date not set";
-
-            if (status == 'todo') {
-               dateText = "Not started yet";
-            } else if (status == 'completed') {
-               Timestamp? start = data['startedAt'];
-               Timestamp? end = data['completedAt'];
-               dateText = "Start: ${_formatTimestamp(start)}  -  End: ${_formatTimestamp(end)}";
-            }
-
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
               child: ListTile(
@@ -348,10 +330,92 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                   data['taskName'] ?? 'Unknown Work',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
-                subtitle: Text(dateText),
-                trailing: status == 'completed'
-                    ? const Icon(Icons.check_circle, color: Colors.green)
-                    : const Icon(Icons.hourglass_empty, color: Colors.orange),
+                subtitle: const Text("Not started yet"),
+                trailing: const Icon(Icons.hourglass_empty, color: Colors.orange),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildCompletedList() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('project_tasks')
+          .where('projectId', isEqualTo: temple['id'])
+          .where('status', isEqualTo: 'completed')
+          .orderBy('completedAt', descending: true) // STACK (Newest First)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData)
+          return const Center(child: CircularProgressIndicator());
+        final docs = snapshot.data!.docs;
+        if (docs.isEmpty)
+          return const Center(child: Text("No completed works", style: TextStyle(color: Colors.grey)));
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final data = docs[index].data() as Map<String, dynamic>;
+            
+            Timestamp? start = data['startedAt'];
+            Timestamp? end = data['completedAt'];
+            String dateText = "Start: ${_formatTimestamp(start)}  -  End: ${_formatTimestamp(end)}";
+            
+            // Fetch Images
+            List<dynamic> endImages = data['endImages'] ?? [];
+
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              elevation: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                     Row(
+                      children: [
+                        const Icon(Icons.check_circle, color: Colors.green),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            data['taskName'] ?? 'Unknown Work',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Text(dateText, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                    if (endImages.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      const Text("Submitted Photos:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      const SizedBox(height: 5),
+                      SizedBox(
+                        height: 70,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: endImages.length,
+                          itemBuilder: (context, imgIndex) {
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
+                              child: GestureDetector(
+                                onTap: () => _showFullScreenImage(endImages[imgIndex]),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Image.network(endImages[imgIndex], width: 70, height: 70, fit: BoxFit.cover),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      )
+                    ]
+                  ],
+                ),
               ),
             );
           },
@@ -390,10 +454,7 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
             Timestamp? startTs = data['startedAt'];
             String dateText = startTs != null ? "Started: ${_formatTimestamp(startTs)}" : "Started: N/A";
 
-            List<dynamic> allImages = [
-              ...(data['startImages'] ?? []),
-              ...(data['endImages'] ?? []),
-            ];
+            List<dynamic> endImages = data['endImages'] ?? [];
 
             return Card(
               margin: const EdgeInsets.only(bottom: 16),
@@ -446,7 +507,7 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                     const SizedBox(height: 5),
                     Text(dateText, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
                     const SizedBox(height: 8),
-                    if (allImages.isNotEmpty) ...[
+                    if (endImages.isNotEmpty) ...[
                       const Text(
                         "Attached Photos:",
                         style: TextStyle(
@@ -460,15 +521,15 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                         height: 80,
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
-                          itemCount: allImages.length,
+                          itemCount: endImages.length,
                           itemBuilder: (ctx, i) => Padding(
                             padding: const EdgeInsets.only(right: 8.0),
                             child: GestureDetector(
-                              onTap: () => _showFullScreenImage(allImages[i]),
+                              onTap: () => _showFullScreenImage(endImages[i]),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
                                 child: Image.network(
-                                  allImages[i],
+                                  endImages[i],
                                   width: 80,
                                   height: 80,
                                   fit: BoxFit.cover,
@@ -501,7 +562,7 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                                 .doc(docId)
                                 .update({
                               'status': 'completed',
-                              'completedAt': FieldValue.serverTimestamp(), // Capture End Date here
+                              'completedAt': FieldValue.serverTimestamp(), // Capture End Date
                             }),
                             icon: const Icon(Icons.check, size: 18),
                             label: const Text("Approve"),
