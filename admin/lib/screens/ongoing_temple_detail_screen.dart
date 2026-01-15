@@ -39,6 +39,12 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
     widget.onUpdated(temple);
     if (Navigator.canPop(context)) Navigator.pop(context);
   }
+  
+  String _formatTimestamp(Timestamp? timestamp) {
+    if (timestamp == null) return "N/A";
+    DateTime date = timestamp.toDate();
+    return "${date.day}/${date.month}/${date.year}";
+  }
 
   /// PERFORMS CASCADE DELETE:
   /// 1. Deletes all tasks associated with this project.
@@ -324,11 +330,16 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
-            DateTime? fromDate = (data['fromDate'] as Timestamp?)?.toDate();
-            DateTime? toDate = (data['toDate'] as Timestamp?)?.toDate();
-            String dateText = fromDate != null && toDate != null
-                ? "${fromDate.day}/${fromDate.month} - ${toDate.day}/${toDate.month}/${toDate.year}"
-                : "Date not set";
+            
+            String dateText = "Date not set";
+
+            if (status == 'todo') {
+               dateText = "Not started yet";
+            } else if (status == 'completed') {
+               Timestamp? start = data['startedAt'];
+               Timestamp? end = data['completedAt'];
+               dateText = "Start: ${_formatTimestamp(start)}  -  End: ${_formatTimestamp(end)}";
+            }
 
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
@@ -375,6 +386,10 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
             final data = docs[index].data() as Map<String, dynamic>;
             final docId = docs[index].id;
             final status = data['status'] ?? 'ongoing';
+            
+            Timestamp? startTs = data['startedAt'];
+            String dateText = startTs != null ? "Started: ${_formatTimestamp(startTs)}" : "Started: N/A";
+
             List<dynamic> allImages = [
               ...(data['startImages'] ?? []),
               ...(data['endImages'] ?? []),
@@ -428,6 +443,8 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 5),
+                    Text(dateText, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
                     const SizedBox(height: 8),
                     if (allImages.isNotEmpty) ...[
                       const Text(
@@ -484,7 +501,7 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                                 .doc(docId)
                                 .update({
                               'status': 'completed',
-                              'completedAt': FieldValue.serverTimestamp(),
+                              'completedAt': FieldValue.serverTimestamp(), // Capture End Date here
                             }),
                             icon: const Icon(Icons.check, size: 18),
                             label: const Text("Approve"),
