@@ -383,6 +383,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
+  // UPDATED: Sorted by createdAt Ascending (Oldest at top, Newest at bottom)
   Widget _buildTodoList() {
     return Stack(
       children: [
@@ -391,6 +392,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
               .collection('project_tasks')
               .where('projectId', isEqualTo: _projectId)
               .where('status', isEqualTo: 'todo')
+              .orderBy('createdAt', descending: false) // TOP to BOTTOM (Ascending)
               .snapshots(),
           builder: (context, snapshot) {
             if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
@@ -472,12 +474,14 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     );
   }
 
+  // UPDATED: Sorted by completedAt Descending (Stack: Newest First)
   Widget _buildCompletedList() {
     return StreamBuilder<QuerySnapshot>(
       stream: _firestore
           .collection('project_tasks')
           .where('projectId', isEqualTo: _projectId)
           .where('status', isEqualTo: 'completed')
+          .orderBy('completedAt', descending: true) // STACK (Newest First)
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
@@ -499,23 +503,58 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
             String startStr = _formatTimestamp(startTs);
             String endStr = _formatTimestamp(endTs);
 
+            // Fetch images
+            List<dynamic> endImages = data['endImages'] ?? [];
+
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
-              child: ListTile(
-                leading: const Icon(Icons.check_circle, color: Colors.green),
-                title: Text(
-                  data['taskName'] ?? '', 
-                  style: const TextStyle(fontWeight: FontWeight.bold) 
-                ),
-                subtitle: Column(
+              elevation: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text("Work Completed"),
-                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.check_circle, color: Colors.green),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            data['taskName'] ?? '', 
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)
+                          ),
+                        ),
+                        const Icon(Icons.verified, color: Colors.blue),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
                     Text("Start: $startStr | End: $endStr", style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                    if (endImages.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      const Text("Submitted Photos:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      const SizedBox(height: 5),
+                      SizedBox(
+                        height: 70,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: endImages.length,
+                          itemBuilder: (context, imgIndex) {
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
+                              child: GestureDetector(
+                                onTap: () => _showFullScreenImage(endImages[imgIndex]),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Image.network(endImages[imgIndex], width: 70, height: 70, fit: BoxFit.cover),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      )
+                    ]
                   ],
                 ),
-                trailing: const Icon(Icons.verified, color: Colors.blue),
               ),
             );
           },
@@ -644,7 +683,7 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
 }
 
 // =========================================================
-// 1. TODO TASK CARD (UPDATED - Accumulative Image Selection)
+// 1. TODO TASK CARD (UPDATED - NO IMAGES)
 // =========================================================
 class TodoTaskCard extends StatefulWidget {
   final String taskId;
@@ -665,32 +704,7 @@ class TodoTaskCard extends StatefulWidget {
 }
 
 class _TodoTaskCardState extends State<TodoTaskCard> {
-  final ImagePicker _picker = ImagePicker();
-  List<XFile> _selectedImages = [];
-  bool _isUploading = false;
-
-  Future<void> _pickImages() async {
-    // FIX: ADD images to existing list instead of replacing
-    final List<XFile> images = await _picker.pickMultiImage(); 
-    
-    if (images.isNotEmpty) {
-      setState(() {
-        _selectedImages.addAll(images);
-        // Enforce limit of 10
-        if (_selectedImages.length > 10) {
-          _selectedImages = _selectedImages.sublist(0, 10);
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Maximum 10 images allowed")));
-        }
-      });
-    }
-  }
-
-  // Helper to remove an image if user wants
-  void _removeImage(int index) {
-    setState(() {
-      _selectedImages.removeAt(index);
-    });
-  }
+  bool _isStarting = false;
 
   Future<void> _deleteTask() async {
     bool confirm = await showDialog(
@@ -712,28 +726,18 @@ class _TodoTaskCardState extends State<TodoTaskCard> {
   }
 
   Future<void> _startTask() async {
-    if (_selectedImages.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please upload progress photos first")));
-      return;
-    }
-    setState(() => _isUploading = true);
+    setState(() => _isStarting = true);
     try {
-      List<String> uploadedUrls = [];
-      for (var image in _selectedImages) {
-        String? url = await CloudinaryService.uploadImage(imageFile: image, userId: widget.userId, projectId: widget.projectId);
-        if (url != null) uploadedUrls.add(url);
-      }
-      
+      // Just update status and timestamp, NO IMAGES
       await FirebaseFirestore.instance.collection('project_tasks').doc(widget.taskId).update({
         'status': 'ongoing',
-        'startImages': uploadedUrls,
         'startedAt': FieldValue.serverTimestamp(),
       });
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Work Started! Moved to Ongoing.")));
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
     } finally {
-      if (mounted) setState(() => _isUploading = false);
+      if (mounted) setState(() => _isStarting = false);
     }
   }
 
@@ -758,60 +762,13 @@ class _TodoTaskCardState extends State<TodoTaskCard> {
             ),
             Text("Not started yet", style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600], fontStyle: FontStyle.italic)),
             const SizedBox(height: 16),
-            Text("Upload Start Photo:", style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                ElevatedButton(
-                  onPressed: _pickImages,
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0E0E0), foregroundColor: Colors.black, elevation: 0),
-                  child: const Text("Choose File"),
-                ),
-                const SizedBox(width: 10),
-                Expanded(child: Text(_selectedImages.isEmpty ? "No file chosen" : "${_selectedImages.length} files selected", style: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 13), overflow: TextOverflow.ellipsis)),
-              ],
-            ),
-            if (_selectedImages.isNotEmpty) 
-              Padding(
-                padding: const EdgeInsets.only(top: 10), 
-                child: Wrap(
-                  spacing: 8, 
-                  runSpacing: 8,
-                  children: _selectedImages.asMap().entries.map((entry) {
-                    int idx = entry.key;
-                    XFile img = entry.value;
-                    return Stack(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4), 
-                          child: kIsWeb 
-                              ? Image.network(img.path, width: 60, height: 60, fit: BoxFit.cover) 
-                              : Image.file(File(img.path), width: 60, height: 60, fit: BoxFit.cover)
-                        ),
-                        Positioned(
-                          right: 0,
-                          top: 0,
-                          child: GestureDetector(
-                            onTap: () => _removeImage(idx),
-                            child: Container(
-                              color: Colors.black54,
-                              child: const Icon(Icons.close, color: Colors.white, size: 16),
-                            ),
-                          ),
-                        )
-                      ],
-                    );
-                  }).toList()
-                )
-              ),
-            const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               height: 45,
               child: ElevatedButton(
-                onPressed: _isUploading ? null : _startTask,
+                onPressed: _isStarting ? null : _startTask,
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4285F4), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)), elevation: 0),
-                child: _isUploading 
+                child: _isStarting 
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                   : Text("Start", style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600)),
               ),
@@ -824,7 +781,7 @@ class _TodoTaskCardState extends State<TodoTaskCard> {
 }
 
 // =========================================================
-// 2. ONGOING TASK CARD (UPDATED - Accumulative Image Selection)
+// 2. ONGOING TASK CARD (UPDATED - LIMIT 5, MANDATORY UPLOAD)
 // =========================================================
 class OngoingTaskCard extends StatefulWidget {
   final String taskId;
@@ -854,22 +811,21 @@ class _OngoingTaskCardState extends State<OngoingTaskCard> {
   bool _isUploading = false;
 
   Future<void> _pickImages() async {
-    // FIX: ADD images to existing list instead of replacing
+    // FIX: ADD images to existing list, LIMIT 5
     final List<XFile> images = await _picker.pickMultiImage(); 
     
     if (images.isNotEmpty) {
       setState(() {
         _selectedImages.addAll(images);
-        // Enforce limit of 10
-        if (_selectedImages.length > 10) {
-          _selectedImages = _selectedImages.sublist(0, 10);
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Maximum 10 images allowed")));
+        // Enforce limit of 5
+        if (_selectedImages.length > 5) {
+          _selectedImages = _selectedImages.sublist(0, 5);
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Maximum 5 images allowed")));
         }
       });
     }
   }
 
-  // Helper to remove an image if user wants
   void _removeImage(int index) {
     setState(() {
       _selectedImages.removeAt(index);
@@ -894,14 +850,23 @@ class _OngoingTaskCardState extends State<OngoingTaskCard> {
   }
 
   Future<void> _sendForApproval() async {
+    // VALIDATION: Check if images are selected
+    if (_selectedImages.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please upload an image before sending for approval"),
+          backgroundColor: Colors.red,
+        )
+      );
+      return;
+    }
+
     setState(() => _isUploading = true);
     try {
       List<String> uploadedUrls = [];
-      if (_selectedImages.isNotEmpty) {
-        for (var image in _selectedImages) {
-          String? url = await CloudinaryService.uploadImage(imageFile: image, userId: widget.userId, projectId: widget.projectId);
-          if (url != null) uploadedUrls.add(url);
-        }
+      for (var image in _selectedImages) {
+        String? url = await CloudinaryService.uploadImage(imageFile: image, userId: widget.userId, projectId: widget.projectId);
+        if (url != null) uploadedUrls.add(url);
       }
       
       await FirebaseFirestore.instance.collection('project_tasks').doc(widget.taskId).update({
@@ -942,7 +907,7 @@ class _OngoingTaskCardState extends State<OngoingTaskCard> {
             const SizedBox(height: 16),
             
             if (!isPending) ...[
-              Text("Upload Completion Photo (Optional):", style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87)),
+              Text("Upload Completion Photo (Max 5):", style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87)),
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -955,6 +920,7 @@ class _OngoingTaskCardState extends State<OngoingTaskCard> {
                   Expanded(child: Text(_selectedImages.isEmpty ? "No file chosen" : "${_selectedImages.length} files selected", style: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 13), overflow: TextOverflow.ellipsis)),
                 ],
               ),
+              
               if (_selectedImages.isNotEmpty) 
                 Padding(
                   padding: const EdgeInsets.only(top: 10, bottom: 16), 
