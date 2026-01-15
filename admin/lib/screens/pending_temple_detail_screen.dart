@@ -40,31 +40,57 @@ class PendingTempleDetailScreen extends StatelessWidget {
             _buildHeader(context, status),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
                 children: [
                   _buildSectionCard(
                     icon: Icons.person_outline_rounded,
                     title: 'User Information',
                     child: Column(
                       children: [
-                        _buildInfoRow('Name', (temple['userName'] ?? temple['name'] ?? 'N/A').toString()),
-                        _buildInfoRow('Email', (temple['userEmail'] ?? temple['email'] ?? 'N/A').toString()),
-                        _buildInfoRow('Phone', (temple['userPhone'] ?? temple['phone'] ?? 'N/A').toString()),
+                        _buildInfoRow(
+                          'Name',
+                          (temple['userName'] ??
+                                  temple['name'] ??
+                                  'N/A')
+                              .toString(),
+                        ),
+                        _buildInfoRow(
+                          'Email',
+                          (temple['userEmail'] ??
+                                  temple['email'] ??
+                                  'N/A')
+                              .toString(),
+                        ),
+                        _buildInfoRow(
+                          'Phone',
+                          (temple['userPhone'] ??
+                                  temple['phone'] ??
+                                  'N/A')
+                              .toString(),
+                        ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 16),
-                  _buildSiteImagesCard(),
+                  _buildSiteImagesCard(context),
                   const SizedBox(height: 16),
                   _buildSectionCard(
                     icon: Icons.location_on_outlined,
                     title: 'Location Details',
                     child: Column(
                       children: [
-                        _buildInfoRow('Place', (temple['place'] ?? '').toString()),
-                        _buildInfoRow('District', (temple['district'] ?? '').toString()),
-                        _buildInfoRow('Taluk', (temple['taluk'] ?? '').toString()),
-                        _buildInfoRow('Map Link', (temple['mapLocation'] ?? 'Not provided').toString()),
+                        _buildInfoRow(
+                            'Place', (temple['place'] ?? '').toString()),
+                        _buildInfoRow(
+                            'District', (temple['district'] ?? '').toString()),
+                        _buildInfoRow(
+                            'Taluk', (temple['taluk'] ?? '').toString()),
+                        _buildInfoRow(
+                          'Map Link',
+                          (temple['mapLocation'] ?? 'Not provided')
+                              .toString(),
+                        ),
                       ],
                     ),
                   ),
@@ -93,7 +119,10 @@ class PendingTempleDetailScreen extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.only(bottomLeft: Radius.circular(32), bottomRight: Radius.circular(32)),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(32),
+          bottomRight: Radius.circular(32),
+        ),
       ),
       child: SafeArea(
         child: Padding(
@@ -102,7 +131,11 @@ class PendingTempleDetailScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new, color: goldAccent, size: 20),
+                icon: const Icon(
+                  Icons.arrow_back_ios_new,
+                  color: goldAccent,
+                  size: 20,
+                ),
                 onPressed: () => onUpdated(temple),
               ),
               Padding(
@@ -110,11 +143,24 @@ class PendingTempleDetailScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text((temple['name'] ?? 'Temple Project').toString(),
-                        style: GoogleFonts.philosopher(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
+                    Text(
+                      (temple['name'] ?? 'Temple Project').toString(),
+                      style: GoogleFonts.philosopher(
+                        color: Colors.white,
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(height: 4),
-                    Text('ID: ${temple['projectNumber'] ?? temple['projectId'] ?? 'P000'} • ${status.toUpperCase()}',
-                        style: GoogleFonts.poppins(color: goldAccent.withOpacity(0.9), fontSize: 13, fontWeight: FontWeight.w500, letterSpacing: 1.1)),
+                    Text(
+                      'ID: ${temple['projectNumber'] ?? temple['projectId'] ?? 'P000'} • ${status.toUpperCase()}',
+                      style: GoogleFonts.poppins(
+                        color: goldAccent.withOpacity(0.9),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 1.1,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -125,12 +171,22 @@ class PendingTempleDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildSectionCard({required IconData icon, required String title, required Widget child}) {
+  Widget _buildSectionCard({
+    required IconData icon,
+    required String title,
+    required Widget child,
+  }) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: maroonDeep.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: maroonDeep.withOpacity(0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         children: [
@@ -140,21 +196,32 @@ class PendingTempleDetailScreen extends StatelessWidget {
               children: [
                 Icon(icon, color: maroonLight, size: 20),
                 const SizedBox(width: 8),
-                Text(title, style: GoogleFonts.philosopher(fontWeight: FontWeight.bold, fontSize: 17, color: maroonDeep)),
+                Text(
+                  title,
+                  style: GoogleFonts.philosopher(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 17,
+                    color: maroonDeep,
+                  ),
+                ),
               ],
             ),
           ),
           const Divider(indent: 16, endIndent: 16),
-          Padding(padding: const EdgeInsets.all(16), child: child),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: child,
+          ),
         ],
       ),
     );
   }
 
-  // --- UPDATED IMAGE CARD FOR HASHED (BASE64) DATA ---
-  Widget _buildSiteImagesCard() {
+  // --- IMAGE CARD WITH BASE64 + URL SUPPORT + FULLSCREEN ON TAP ---
+  Widget _buildSiteImagesCard(BuildContext context) {
     List<String> imageData = [];
-    final rawData = temple['imageUrls'] ?? temple['images'] ?? temple['siteImages'];
+    final rawData =
+        temple['imageUrls'] ?? temple['images'] ?? temple['siteImages'];
 
     if (rawData != null) {
       if (rawData is List) {
@@ -168,7 +235,15 @@ class PendingTempleDetailScreen extends StatelessWidget {
       icon: Icons.camera_alt_outlined,
       title: 'Site Gallery',
       child: imageData.isEmpty
-          ? const Center(child: Text('No site images found', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)))
+          ? const Center(
+              child: Text(
+                'No site images found',
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            )
           : SizedBox(
               height: 200,
               child: ListView.separated(
@@ -177,16 +252,32 @@ class PendingTempleDetailScreen extends StatelessWidget {
                 separatorBuilder: (_, __) => const SizedBox(width: 12),
                 itemBuilder: (context, index) {
                   final String source = imageData[index];
-                  bool isBase64 = !source.startsWith('http');
 
-                  return ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      width: 280,
-                      color: Colors.grey[200],
-                      child: isBase64 
-                        ? _buildBase64Image(source) 
-                        : _buildNetworkImage(source),
+                  final bool isUrl = source.startsWith('http');
+                  final bool isDataUri = source.startsWith('data:image');
+
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => FullscreenImageViewer(
+                            source: source,
+                          ),
+                        ),
+                      );
+                    },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        width: 280,
+                        color: Colors.grey[200],
+                        child: isUrl
+                            ? _buildNetworkImage(source)
+                            : _buildBase64Image(
+                                source,
+                                isDataUri: isDataUri,
+                              ),
+                      ),
                     ),
                   );
                 },
@@ -195,21 +286,53 @@ class PendingTempleDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildBase64Image(String base64String) {
+  /// Handles both plain base64 and data URLs like data:image/jpeg;base64,/9j/4AAQ...
+  Widget _buildBase64Image(
+    String base64String, {
+    bool isDataUri = false,
+  }) {
     try {
-      // Remove data:image/png;base64, prefix if it exists
-      String cleanHash = base64String.contains(',') 
-          ? base64String.split(',').last 
-          : base64String;
-          
-      Uint8List bytes = base64Decode(cleanHash.trim());
+      String cleanHash = base64String;
+
+      if (isDataUri || base64String.contains(',')) {
+        cleanHash = base64String.split(',').last;
+      }
+
+      cleanHash = cleanHash.replaceAll('\n', '').replaceAll('\r', '').trim();
+
+      if (cleanHash.length > 50) {
+        debugPrint(
+            'Base64 image (first 50 chars): ${cleanHash.substring(0, 50)}');
+      } else {
+        debugPrint('Base64 image (len=${cleanHash.length}): $cleanHash');
+      }
+
+      final Uint8List bytes = base64Decode(cleanHash);
+
       return Image.memory(
         bytes,
         fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => const Center(child: Icon(Icons.broken_image, color: Colors.grey)),
+        width: 280,
+        height: 200,
+        errorBuilder: (context, error, stackTrace) {
+          debugPrint('Image.memory error: $error');
+          return const Center(
+            child: Icon(
+              Icons.broken_image,
+              color: Colors.grey,
+            ),
+          );
+        },
       );
-    } catch (e) {
-      return const Center(child: Icon(Icons.error_outline, color: Colors.red));
+    } catch (e, st) {
+      debugPrint('Base64 decode error: $e');
+      debugPrint(st.toString());
+      return const Center(
+        child: Icon(
+          Icons.error_outline,
+          color: Colors.red,
+        ),
+      );
     }
   }
 
@@ -217,12 +340,14 @@ class PendingTempleDetailScreen extends StatelessWidget {
     return Image.network(
       url,
       fit: BoxFit.cover,
-      loadingBuilder: (context, child, progress) => progress == null ? child : const Center(child: CircularProgressIndicator()),
-      errorBuilder: (context, error, stackTrace) => const Center(child: Icon(Icons.broken_image, color: Colors.grey)),
+      width: 280,
+      height: 200,
+      loadingBuilder: (context, child, progress) =>
+          progress == null ? child : const Center(child: CircularProgressIndicator()),
+      errorBuilder: (context, error, stackTrace) =>
+          const Center(child: Icon(Icons.broken_image, color: Colors.grey)),
     );
   }
-
-  // --- REST OF THE UI COMPONENTS ---
 
   Widget _buildProjectComponentCard() {
     final feature = (temple['feature'] ?? 'General Renovation').toString();
@@ -235,25 +360,54 @@ class PendingTempleDetailScreen extends StatelessWidget {
         decoration: BoxDecoration(
           color: maroonDeep.withOpacity(0.04),
           borderRadius: BorderRadius.circular(12),
-          border: const Border(left: BorderSide(color: goldAccent, width: 4)),
+          border: const Border(
+            left: BorderSide(color: goldAccent, width: 4),
+          ),
         ),
-        child: Text(feature, style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: maroonDeep)),
+        child: Text(
+          feature,
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+            color: maroonDeep,
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildContactBudgetCard() {
-    final double amount = double.tryParse((temple['estimatedAmount'] ?? '0').toString()) ?? 0.0;
+    final double amount =
+        double.tryParse((temple['estimatedAmount'] ?? '0').toString()) ?? 0.0;
     return _buildSectionCard(
       icon: Icons.account_balance_wallet_outlined,
       title: 'Budget & Contact',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildInfoRow('Local POC', (temple['contactName'] ?? temple['userName'] ?? 'N/A').toString()),
+          _buildInfoRow(
+            'Local POC',
+            (temple['contactName'] ??
+                    temple['userName'] ??
+                    'N/A')
+                .toString(),
+          ),
           const SizedBox(height: 12),
-          Text('ESTIMATED BUDGET', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey, letterSpacing: 1.2)),
-          Text('₹${amount.toStringAsFixed(0)}', style: GoogleFonts.philosopher(fontSize: 32, fontWeight: FontWeight.bold, color: maroonDeep)),
+          Text(
+            'ESTIMATED BUDGET',
+            style: GoogleFonts.poppins(
+              fontSize: 11,
+              color: Colors.grey,
+              letterSpacing: 1.2,
+            ),
+          ),
+          Text(
+            '₹${amount.toStringAsFixed(0)}',
+            style: GoogleFonts.philosopher(
+              fontSize: 32,
+              fontWeight: FontWeight.bold,
+              color: maroonDeep,
+            ),
+          ),
         ],
       ),
     );
@@ -265,8 +419,26 @@ class PendingTempleDetailScreen extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 80, child: Text(label, style: GoogleFonts.poppins(color: Colors.grey, fontSize: 13))),
-          Expanded(child: Text(value, style: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 13, color: textDark))),
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: GoogleFonts.poppins(
+                color: Colors.grey,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                color: textDark,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -278,16 +450,42 @@ class PendingTempleDetailScreen extends StatelessWidget {
         Expanded(
           child: ElevatedButton(
             onPressed: () => _handleSanction(context),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2D6A4F), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 18), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            child: const Text('SANCTION', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2D6A4F),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text(
+              'SANCTION',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.1,
+              ),
+            ),
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: OutlinedButton(
-            onPressed: () => onDeleted(), 
-            style: OutlinedButton.styleFrom(foregroundColor: Colors.red[800], side: BorderSide(color: Colors.red[800]!), padding: const EdgeInsets.symmetric(vertical: 18), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            child: const Text('REJECT', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1)),
+            onPressed: () => onDeleted(),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.red,
+              side: const BorderSide(color: Colors.red),
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text(
+              'REJECT',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.1,
+              ),
+            ),
           ),
         ),
       ],
@@ -295,29 +493,112 @@ class PendingTempleDetailScreen extends StatelessWidget {
   }
 
   void _handleSanction(BuildContext context) async {
-    final confirm = await _showDialog(context, 'Sanction Project', 'Move this project to the ongoing phase?', Colors.green);
+    final confirm = await _showDialog(
+      context,
+      'Sanction Project',
+      'Move this project to the ongoing phase?',
+      Colors.green,
+    );
     if (confirm == true) {
       final docId = (temple['id'] ?? temple['projectId'] ?? '').toString();
       if (docId.isEmpty) return;
-      await FirebaseFirestore.instance.collection('projects').doc(docId).update({'isSanctioned': true, 'status': 'ongoing'});
+      await FirebaseFirestore.instance
+          .collection('projects')
+          .doc(docId)
+          .update({'isSanctioned': true, 'status': 'ongoing'});
       temple['isSanctioned'] = true;
       temple['status'] = 'ongoing';
       onUpdated(temple);
     }
   }
 
-  Future<bool?> _showDialog(BuildContext context, String title, String msg, Color color) {
+  Future<bool?> _showDialog(
+    BuildContext context,
+    String title,
+    String msg,
+    Color color,
+  ) {
     return showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(title, style: GoogleFonts.philosopher(fontWeight: FontWeight.bold)),
+        title: Text(
+          title,
+          style: GoogleFonts.philosopher(fontWeight: FontWeight.bold),
+        ),
         content: Text(msg),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), style: ElevatedButton.styleFrom(backgroundColor: color), child: const Text('Confirm')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: color),
+            child: const Text('Confirm'),
+          ),
         ],
       ),
+    );
+  }
+}
+
+// ---------------- FULLSCREEN IMAGE VIEWER ----------------
+
+class FullscreenImageViewer extends StatelessWidget {
+  final String source;
+
+  const FullscreenImageViewer({Key? key, required this.source})
+      : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isUrl = source.startsWith('http');
+    final bool isDataUri = source.startsWith('data:image');
+
+    Widget child;
+    if (isUrl) {
+      child = InteractiveViewer(
+        child: Image.network(
+          source,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => const Center(
+            child: Icon(Icons.broken_image, color: Colors.white),
+          ),
+        ),
+      );
+    } else {
+      String clean = source;
+      if (isDataUri || source.contains(',')) {
+        clean = source.split(',').last;
+      }
+      clean = clean.replaceAll('\n', '').replaceAll('\r', '').trim();
+
+      try {
+        final bytes = base64Decode(clean);
+        child = InteractiveViewer(
+          child: Image.memory(
+            bytes,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Center(
+              child: Icon(Icons.broken_image, color: Colors.white),
+            ),
+          ),
+        );
+      } catch (_) {
+        child = const Center(
+          child: Icon(Icons.error_outline, color: Colors.white),
+        );
+      }
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: Center(child: child),
     );
   }
 }

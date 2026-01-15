@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
+
 import 'project_chat_section.dart';
 import 'finance_tab_section.dart';
 
@@ -19,7 +20,8 @@ class OngoingTempleDetailScreen extends StatefulWidget {
       _OngoingTempleDetailScreenState();
 }
 
-class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
+class _OngoingTempleDetailScreenState
+    extends State<OngoingTempleDetailScreen> {
   static const Color primaryMaroon = Color(0xFF6D1B1B);
   static const Color primaryGold = Color(0xFFD4AF37);
   static const Color backgroundCream = Color(0xFFFFF7E8);
@@ -27,7 +29,7 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
 
   late Map<String, dynamic> temple;
   int selectedTab = 0;
-  bool isDeleting = false; 
+  bool isDeleting = false;
 
   @override
   void initState() {
@@ -39,7 +41,7 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
     widget.onUpdated(temple);
     if (Navigator.canPop(context)) Navigator.pop(context);
   }
-  
+
   String _formatTimestamp(Timestamp? timestamp) {
     if (timestamp == null) return "N/A";
     DateTime date = timestamp.toDate();
@@ -52,7 +54,8 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
       builder: (context) => AlertDialog(
         title: const Text("Delete Project?"),
         content: const Text(
-            "This will permanently delete this project, all associated tasks, and bills. This action cannot be undone."),
+          "This will permanently delete this project, all associated tasks, and bills. This action cannot be undone.",
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -90,12 +93,13 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
         batch.delete(doc.reference);
       }
 
-      final projectRef = FirebaseFirestore.instance.collection('projects').doc(projectId);
+      final projectRef =
+          FirebaseFirestore.instance.collection('projects').doc(projectId);
       batch.delete(projectRef);
 
       await batch.commit();
 
-      widget.onUpdated(null); 
+      widget.onUpdated(null);
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -134,7 +138,8 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                   loadingBuilder: (context, child, loadingProgress) {
                     if (loadingProgress == null) return child;
                     return const Center(
-                      child: CircularProgressIndicator(color: Colors.white),
+                      child:
+                          CircularProgressIndicator(color: Colors.white),
                     );
                   },
                 ),
@@ -155,6 +160,63 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
         ),
       ),
     );
+  }
+
+  // NEW: mark whole project as completed
+  Future<void> _markProjectCompleted() async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Mark Project as Completed?"),
+        content: const Text(
+          "This will mark the entire project as completed and move it to the Completed tab.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("CANCEL"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              "MARK COMPLETED",
+              style: TextStyle(color: Colors.green),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final String projectId = temple['id'] ?? temple['projectId'];
+      if (projectId == null || projectId.toString().isEmpty) return;
+
+      await FirebaseFirestore.instance
+          .collection('projects')
+          .doc(projectId.toString())
+          .update({
+        'status': 'completed',
+        'progress': 100,
+        'completedDate': FieldValue.serverTimestamp(),
+      });
+
+      temple['status'] = 'completed';
+      temple['progress'] = 100;
+
+      widget.onUpdated(temple);
+
+      if (mounted) {
+        Navigator.pop(context); // back to TempleDetailScreen
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error marking project completed: $e")),
+        );
+      }
+    }
   }
 
   @override
@@ -182,10 +244,13 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16.0),
                 child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                        color: Colors.white, strokeWidth: 2)),
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                ),
               ),
             )
           else
@@ -198,6 +263,7 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
       ),
       body: Column(
         children: [
+          // Tabs
           Container(
             color: Colors.white,
             child: Row(
@@ -209,6 +275,30 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
               ],
             ),
           ),
+
+          // NEW: Complete project button
+          Container(
+            width: double.infinity,
+            color: Colors.white,
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: ElevatedButton.icon(
+              onPressed: _markProjectCompleted,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green[700],
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              icon: const Icon(Icons.flag),
+              label: const Text(
+                'Mark Project as Completed',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+
           Expanded(child: _buildCurrentTabContent()),
         ],
       ),
@@ -297,26 +387,27 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
     );
   }
 
-  // UPDATED: Added orderBy('createdAt', descending: false)
   Widget _buildTaskList(String status) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('project_tasks')
           .where('projectId', isEqualTo: temple['id'])
           .where('status', isEqualTo: status)
-          .orderBy('createdAt', descending: false) // Newest at Bottom
+          .orderBy('createdAt', descending: false)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData)
+        if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
+        }
         final docs = snapshot.data!.docs;
-        if (docs.isEmpty)
+        if (docs.isEmpty) {
           return Center(
             child: Text(
               "No $status works found",
               style: const TextStyle(color: Colors.grey),
             ),
           );
+        }
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
@@ -331,7 +422,8 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 subtitle: const Text("Not started yet"),
-                trailing: const Icon(Icons.hourglass_empty, color: Colors.orange),
+                trailing: const Icon(Icons.hourglass_empty,
+                    color: Colors.orange),
               ),
             );
           },
@@ -346,26 +438,31 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
           .collection('project_tasks')
           .where('projectId', isEqualTo: temple['id'])
           .where('status', isEqualTo: 'completed')
-          .orderBy('completedAt', descending: true) // STACK (Newest First)
+          .orderBy('completedAt', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData)
+        if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
+        }
         final docs = snapshot.data!.docs;
-        if (docs.isEmpty)
-          return const Center(child: Text("No completed works", style: TextStyle(color: Colors.grey)));
+        if (docs.isEmpty) {
+          return const Center(
+            child: Text("No completed works",
+                style: TextStyle(color: Colors.grey)),
+          );
+        }
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
-            
+
             Timestamp? start = data['startedAt'];
             Timestamp? end = data['completedAt'];
-            String dateText = "Start: ${_formatTimestamp(start)}  -  End: ${_formatTimestamp(end)}";
-            
-            // Fetch Images
+            String dateText =
+                "Start: ${_formatTimestamp(start)}  -  End: ${_formatTimestamp(end)}";
+
             List<dynamic> endImages = data['endImages'] ?? [];
 
             return Card(
@@ -376,23 +473,32 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                     Row(
+                    Row(
                       children: [
                         const Icon(Icons.check_circle, color: Colors.green),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             data['taskName'] ?? 'Unknown Work',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 16),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 5),
-                    Text(dateText, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                    Text(
+                      dateText,
+                      style: TextStyle(
+                          color: Colors.grey[600], fontSize: 13),
+                    ),
                     if (endImages.isNotEmpty) ...[
                       const SizedBox(height: 10),
-                      const Text("Submitted Photos:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      const Text(
+                        "Submitted Photos:",
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
                       const SizedBox(height: 5),
                       SizedBox(
                         height: 70,
@@ -401,12 +507,20 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                           itemCount: endImages.length,
                           itemBuilder: (context, imgIndex) {
                             return Padding(
-                              padding: const EdgeInsets.only(right: 8.0),
+                              padding:
+                                  const EdgeInsets.only(right: 8.0),
                               child: GestureDetector(
-                                onTap: () => _showFullScreenImage(endImages[imgIndex]),
+                                onTap: () => _showFullScreenImage(
+                                    endImages[imgIndex]),
                                 child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: Image.network(endImages[imgIndex], width: 70, height: 70, fit: BoxFit.cover),
+                                  borderRadius:
+                                      BorderRadius.circular(6),
+                                  child: Image.network(
+                                    endImages[imgIndex],
+                                    width: 70,
+                                    height: 70,
+                                    fit: BoxFit.cover,
+                                  ),
                                 ),
                               ),
                             );
@@ -432,16 +546,18 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
           .where('status', whereIn: ['ongoing', 'pending_approval'])
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData)
+        if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
+        }
         final docs = snapshot.data!.docs;
-        if (docs.isEmpty)
+        if (docs.isEmpty) {
           return const Center(
             child: Text(
               "No ongoing works",
               style: TextStyle(color: Colors.grey),
             ),
           );
+        }
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
@@ -450,9 +566,11 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
             final data = docs[index].data() as Map<String, dynamic>;
             final docId = docs[index].id;
             final status = data['status'] ?? 'ongoing';
-            
+
             Timestamp? startTs = data['startedAt'];
-            String dateText = startTs != null ? "Started: ${_formatTimestamp(startTs)}" : "Started: N/A";
+            String dateText = startTs != null
+                ? "Started: ${_formatTimestamp(startTs)}"
+                : "Started: N/A";
 
             List<dynamic> endImages = data['endImages'] ?? [];
 
@@ -468,7 +586,8 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment:
+                          MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
                           data['taskName'] ?? 'Unknown Work',
@@ -505,7 +624,11 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                       ],
                     ),
                     const SizedBox(height: 5),
-                    Text(dateText, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                    Text(
+                      dateText,
+                      style: TextStyle(
+                          color: Colors.grey[600], fontSize: 13),
+                    ),
                     const SizedBox(height: 8),
                     if (endImages.isNotEmpty) ...[
                       const Text(
@@ -523,9 +646,11 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                           scrollDirection: Axis.horizontal,
                           itemCount: endImages.length,
                           itemBuilder: (ctx, i) => Padding(
-                            padding: const EdgeInsets.only(right: 8.0),
+                            padding:
+                                const EdgeInsets.only(right: 8.0),
                             child: GestureDetector(
-                              onTap: () => _showFullScreenImage(endImages[i]),
+                              onTap: () =>
+                                  _showFullScreenImage(endImages[i]),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
                                 child: Image.network(
@@ -546,10 +671,11 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           TextButton(
-                            onPressed: () => FirebaseFirestore.instance
-                                .collection('project_tasks')
-                                .doc(docId)
-                                .update({'status': 'ongoing'}),
+                            onPressed: () =>
+                                FirebaseFirestore.instance
+                                    .collection('project_tasks')
+                                    .doc(docId)
+                                    .update({'status': 'ongoing'}),
                             child: const Text(
                               "Not Approved",
                               style: TextStyle(color: Colors.red),
@@ -557,12 +683,14 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                           ),
                           const SizedBox(width: 12),
                           ElevatedButton.icon(
-                            onPressed: () => FirebaseFirestore.instance
-                                .collection('project_tasks')
-                                .doc(docId)
-                                .update({
+                            onPressed: () =>
+                                FirebaseFirestore.instance
+                                    .collection('project_tasks')
+                                    .doc(docId)
+                                    .update({
                               'status': 'completed',
-                              'completedAt': FieldValue.serverTimestamp(), // Capture End Date
+                              'completedAt':
+                                  FieldValue.serverTimestamp(),
                             }),
                             icon: const Icon(Icons.check, size: 18),
                             label: const Text("Approve"),
@@ -607,7 +735,8 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
           child: Column(
             children: [
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisAlignment:
+                    MainAxisAlignment.spaceBetween,
                 children: [
                   const Text('Total Budget',
                       style: TextStyle(color: Colors.grey)),
@@ -646,11 +775,12 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
               .where('projectId', isEqualTo: temple['id'])
               .snapshots(),
           builder: (context, snapshot) {
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty)
+            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
               return Container(
                 padding: const EdgeInsets.all(20),
                 child: const Center(child: Text("No bills found.")),
               );
+            }
             return Column(
               children: snapshot.data!.docs.map((doc) {
                 final bill = doc.data() as Map<String, dynamic>;
@@ -659,7 +789,8 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                   child: ExpansionTile(
                     title: Text(
                       bill['title'] ?? 'Bill',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      style:
+                          const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     subtitle: Text(
                       '₹${bill['amount']}',
@@ -675,7 +806,8 @@ class _OngoingTempleDetailScreenState extends State<OngoingTempleDetailScreen> {
                             itemBuilder: (ctx, i) => Padding(
                               padding: const EdgeInsets.all(8.0),
                               child: GestureDetector(
-                                onTap: () => _showFullScreenImage(images[i]),
+                                onTap: () =>
+                                    _showFullScreenImage(images[i]),
                                 child: Image.network(images[i]),
                               ),
                             ),
