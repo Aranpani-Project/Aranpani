@@ -20,6 +20,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<Map<String, dynamic>> notifications = [];
   bool isLoading = true;
 
+  // Stream subscriptions for real-time updates
   StreamSubscription? _projectsSubscription;
   StreamSubscription? _usersSubscription;
 
@@ -36,11 +37,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.dispose();
   }
 
-  /// Real-time listeners automatically "refresh" the screen whenever 
-  /// data in Firebase changes because of the setState inside the listener.
   void _startRealTimeListeners() {
     setState(() => isLoading = true);
 
+    // Listen to Projects and Users simultaneously for real-time sync
     _projectsSubscription = FirebaseFirestore.instance
         .collection('projects')
         .snapshots()
@@ -51,6 +51,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .collection('users')
           .snapshots()
           .listen((usersSnap) {
+        
         _processData(projectsSnap, usersSnap);
       });
     });
@@ -58,33 +59,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _processData(QuerySnapshot projectsSnap, QuerySnapshot usersSnap) {
     try {
-      // We use Sets of User IDs for reliable mapping
-      final Set<String> idsWithOngoing = {};
-      final Set<String> idsWithProposals = {};
+      final Set<String> usersWithOngoing = {};
+      final Set<String> usersWithProposals = {};
       final Map<String, Map<String, dynamic>> byDistrict = {};
 
-      // 1. Process Projects
+      // 1. Process Projects to determine which users have active/ongoing work
       for (final doc in projectsSnap.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        final String dName = (data['district'] ?? '').toString().trim();
-        final String uId = (data['userId'] ?? '').toString().trim();
-        final String status = (data['status'] ?? 'pending').toString().toLowerCase();
+        final districtName = (data['district'] ?? '').toString().trim();
+        final userName = (data['userName'] ?? '').toString().trim();
+        final status = (data['status'] ?? 'pending').toString().toLowerCase();
         final bool isSanctioned = data['isSanctioned'] == true;
 
-        if (uId.isNotEmpty) {
-          idsWithProposals.add(uId);
-          // Flag as ongoing if sanctioned OR status is specifically 'ongoing'
-          if (isSanctioned || status == 'ongoing') {
-            idsWithOngoing.add(uId);
+        if (userName.isNotEmpty) {
+          usersWithProposals.add(userName);
+          // A user is "Ongoing" if their project is sanctioned or status isn't pending
+          if (isSanctioned || status != 'pending') {
+            usersWithOngoing.add(userName);
           }
         }
 
-        if (dName.isEmpty || dName.toLowerCase() == 'null') continue;
+        if (districtName.isEmpty || districtName.toLowerCase() == 'null') continue;
 
-        final entry = byDistrict.putIfAbsent(dName, () {
+        final entry = byDistrict.putIfAbsent(districtName, () {
           return <String, dynamic>{
-            'id': dName,
-            'name': dName,
+            'id': districtName,
+            'name': districtName,
             'places': 0,
             'newRequests': 0,
             '_placeSet': <String>{},
@@ -102,48 +102,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       }
 
-      // 2. Process Users
+      // 2. Process ALL Registered Users and fetch their specific District/Taluk
       final List<Map<String, dynamic>> allUsers = usersSnap.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
-        final String currentUserId = doc.id;
+        final String name = data['name'] ?? 'Unknown User';
         
-        // Helper to sanitize "null" or empty strings
-        String sanitize(dynamic value) {
-          if (value == null) return 'Not Assigned';
-          String valStr = value.toString().trim();
-          if (valStr.isEmpty || valStr.toLowerCase() == 'null') return 'Not Assigned';
-          return valStr;
-        }
-
         return {
-          'id': currentUserId,
-          'name': data['name'] ?? data['contactName'] ?? 'Unknown User',
-          'phone': data['phone'] ?? data['phoneNumber'] ?? data['contactPhone'] ?? 'N/A',
-          'district': sanitize(data['district']),
-          'taluk': sanitize(data['taluk']),
-          'isOngoing': idsWithOngoing.contains(currentUserId),
-          'hasProposal': idsWithProposals.contains(currentUserId),
+          'id': doc.id,
+          'name': name,
+          'phone': data['phoneNumber'] ?? data['phone'] ?? 'N/A',
+          'district': data['district'] ?? 'Not Assigned',
+          'taluk': data['taluk'] ?? 'Not Assigned',
+          'isOngoing': usersWithOngoing.contains(name),
+          'hasProposal': usersWithProposals.contains(name),
         };
       }).toList();
 
-      // Sort Users A-Z
-      allUsers.sort((a, b) => a['name'].toString().toLowerCase().compareTo(b['name'].toString().toLowerCase()));
-
       setState(() {
         districts = byDistrict.values.toList();
-        districts.sort((a, b) {
-          int countA = a['newRequests'] as int;
-          int countB = b['newRequests'] as int;
-          if (countB != countA) return countB.compareTo(countA);
-          return a['name'].toString().compareTo(b['name'].toString());
-        });
-
+        districts.sort((a, b) => (b['newRequests'] as int).compareTo(a['newRequests'] as int));
         users = allUsers; 
         isLoading = false;
-        notifications = [{'id': '1', 'message': 'Database Updated', 'time': 'Just now', 'read': false}];
+        
+        notifications = [
+          {'id': '1', 'message': 'Live Sync Active', 'time': 'Just now', 'read': false},
+        ];
       });
     } catch (e) {
-      debugPrint('Error processing data: $e');
+      debugPrint('Error processing real-time data: $e');
     }
   }
 
@@ -198,7 +184,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Admin Dashboard', style: TextStyle(color: Color(0xFFFFF4D6), fontSize: 20, fontWeight: FontWeight.bold)),
-                          Text('Real-time Monitoring', style: TextStyle(color: Color(0xFFD4AF37), fontSize: 13)),
+                          Text('Live Data Monitoring', style: TextStyle(color: Color(0xFFD4AF37), fontSize: 13)),
                         ],
                       ),
                     ],
@@ -252,8 +238,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: TextField(
         onChanged: (value) => setState(() => searchQuery = value),
         decoration: InputDecoration(
-          hintText: activeTab == 0 ? 'Search districts...' : 'Search name or phone...',
-          hintStyle: const TextStyle(color: Color(0xFF4A1010), fontSize: 14),
+          hintText: activeTab == 0 ? 'Search districts...' : 'Search by name or phone...',
+          hintStyle: const TextStyle(color: Color(0xFF4A1010)),
           prefixIcon: const Icon(Icons.search, color: Color(0xFF6D1B1B)),
           filled: true,
           fillColor: const Color(0xFFFFFBF2),
@@ -267,10 +253,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildTab(String label, IconData icon, int index) {
     final isActive = activeTab == index;
     return GestureDetector(
-      onTap: () => setState(() {
-        activeTab = index;
-        searchQuery = '';
-      }),
+      onTap: () => setState(() => activeTab = index),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
@@ -291,8 +274,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildDistrictsList() {
     final filtered = districts.where((d) => d['name'].toString().toLowerCase().contains(searchQuery.toLowerCase())).toList();
-    if (filtered.isEmpty) return const Center(child: Text("No districts found"));
-
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: filtered.length,
@@ -331,8 +312,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       u['phone'].toString().toLowerCase().contains(searchQuery.toLowerCase())
     ).toList();
 
-    if (filtered.isEmpty) return const Center(child: Text("No users found"));
-
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: filtered.length,
@@ -362,11 +341,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: Colors.green.shade50,
+                                    color: Colors.green.shade100,
                                     borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.green.shade700),
+                                    border: Border.all(color: Colors.green),
                                   ),
-                                  child: Text("ONGOING", style: TextStyle(color: Colors.green.shade700, fontSize: 10, fontWeight: FontWeight.bold)),
+                                  child: const Text("ONGOING", style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
                                 ),
                             ],
                           ),
@@ -413,7 +392,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Icon(icon, size: 16, color: const Color(0xFFB8962E)),
         const SizedBox(width: 8),
         Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-        Expanded(child: Text(value, style: const TextStyle(fontSize: 13, color: Colors.black87), overflow: TextOverflow.ellipsis)),
+        Text(value, style: const TextStyle(fontSize: 13, color: Colors.black87)),
       ],
     );
   }
@@ -458,7 +437,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           Expanded(
             child: notifications.isEmpty 
-              ? const Center(child: Text("No new updates"))
+              ? const Center(child: Text("No new notifications"))
               : ListView.builder(
                   itemCount: notifications.length, 
                   itemBuilder: (context, index) => ListTile(

@@ -36,16 +36,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.dispose();
   }
 
-  /// Real-time listeners automatically "refresh" the screen whenever 
-  /// data in Firebase changes because of the setState inside the listener.
   void _startRealTimeListeners() {
     setState(() => isLoading = true);
 
+    // Listen to Projects first to determine who has proposals/ongoing work
     _projectsSubscription = FirebaseFirestore.instance
         .collection('projects')
         .snapshots()
         .listen((projectsSnap) {
       
+      // Nested listener for Users to ensure we have project data for flags
       _usersSubscription?.cancel(); 
       _usersSubscription = FirebaseFirestore.instance
           .collection('users')
@@ -58,33 +58,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _processData(QuerySnapshot projectsSnap, QuerySnapshot usersSnap) {
     try {
-      // We use Sets of User IDs for reliable mapping
-      final Set<String> idsWithOngoing = {};
-      final Set<String> idsWithProposals = {};
+      final Set<String> usersWithOngoing = {};
+      final Set<String> usersWithProposals = {};
       final Map<String, Map<String, dynamic>> byDistrict = {};
 
-      // 1. Process Projects
+      // 1. Process Projects to identify User Status
       for (final doc in projectsSnap.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        final String dName = (data['district'] ?? '').toString().trim();
-        final String uId = (data['userId'] ?? '').toString().trim();
-        final String status = (data['status'] ?? 'pending').toString().toLowerCase();
+        final districtName = (data['district'] ?? '').toString().trim();
+        final userName = (data['userName'] ?? '').toString().trim();
+        final status = (data['status'] ?? 'pending').toString().toLowerCase();
         final bool isSanctioned = data['isSanctioned'] == true;
 
-        if (uId.isNotEmpty) {
-          idsWithProposals.add(uId);
-          // Flag as ongoing if sanctioned OR status is specifically 'ongoing'
-          if (isSanctioned || status == 'ongoing') {
-            idsWithOngoing.add(uId);
+        if (userName.isNotEmpty) {
+          usersWithProposals.add(userName);
+          // A user is "Ongoing" if the project is sanctioned OR status is not pending
+          if (isSanctioned || status != 'pending') {
+            usersWithOngoing.add(userName);
           }
         }
 
-        if (dName.isEmpty || dName.toLowerCase() == 'null') continue;
+        // Logic for Projects Tab (Districts list)
+        if (districtName.isEmpty || districtName.toLowerCase() == 'null') continue;
 
-        final entry = byDistrict.putIfAbsent(dName, () {
+        final entry = byDistrict.putIfAbsent(districtName, () {
           return <String, dynamic>{
-            'id': dName,
-            'name': dName,
+            'id': districtName,
+            'name': districtName,
             'places': 0,
             'newRequests': 0,
             '_placeSet': <String>{},
@@ -102,12 +102,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       }
 
-      // 2. Process Users
+      // 2. Process ALL Registered Users
       final List<Map<String, dynamic>> allUsers = usersSnap.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
-        final String currentUserId = doc.id;
+        final String name = data['name'] ?? 'Unknown User';
         
-        // Helper to sanitize "null" or empty strings
+        // Helper to sanitize "null" strings or empty values from Firestore
         String sanitize(dynamic value) {
           if (value == null) return 'Not Assigned';
           String valStr = value.toString().trim();
@@ -116,17 +116,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
 
         return {
-          'id': currentUserId,
-          'name': data['name'] ?? data['contactName'] ?? 'Unknown User',
-          'phone': data['phone'] ?? data['phoneNumber'] ?? data['contactPhone'] ?? 'N/A',
-          'district': sanitize(data['district']),
-          'taluk': sanitize(data['taluk']),
-          'isOngoing': idsWithOngoing.contains(currentUserId),
-          'hasProposal': idsWithProposals.contains(currentUserId),
+          'id': doc.id,
+          'name': name,
+          'phone': data['phoneNumber'] ?? data['phone'] ?? 'N/A',
+          // Explicitly check for both lowercase and capitalized keys if needed
+          'district': sanitize(data['district'] ?? data['District']),
+          'taluk': sanitize(data['taluk'] ?? data['Taluk']),
+          'isOngoing': usersWithOngoing.contains(name),
+          'hasProposal': usersWithProposals.contains(name),
         };
       }).toList();
 
-      // Sort Users A-Z
+      // Sort Users Alphabetically
       allUsers.sort((a, b) => a['name'].toString().toLowerCase().compareTo(b['name'].toString().toLowerCase()));
 
       setState(() {
@@ -140,10 +141,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
         users = allUsers; 
         isLoading = false;
-        notifications = [{'id': '1', 'message': 'Database Updated', 'time': 'Just now', 'read': false}];
+        notifications = [{'id': '1', 'message': 'Live Sync Active', 'time': 'Just now', 'read': false}];
       });
     } catch (e) {
-      debugPrint('Error processing data: $e');
+      debugPrint('Error processing real-time data: $e');
     }
   }
 
@@ -198,7 +199,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Admin Dashboard', style: TextStyle(color: Color(0xFFFFF4D6), fontSize: 20, fontWeight: FontWeight.bold)),
-                          Text('Real-time Monitoring', style: TextStyle(color: Color(0xFFD4AF37), fontSize: 13)),
+                          Text('Live Data Monitoring', style: TextStyle(color: Color(0xFFD4AF37), fontSize: 13)),
                         ],
                       ),
                     ],
@@ -252,8 +253,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: TextField(
         onChanged: (value) => setState(() => searchQuery = value),
         decoration: InputDecoration(
-          hintText: activeTab == 0 ? 'Search districts...' : 'Search name or phone...',
-          hintStyle: const TextStyle(color: Color(0xFF4A1010), fontSize: 14),
+          hintText: activeTab == 0 ? 'Search districts...' : 'Search by name or phone...',
+          hintStyle: const TextStyle(color: Color(0xFF4A1010)),
           prefixIcon: const Icon(Icons.search, color: Color(0xFF6D1B1B)),
           filled: true,
           fillColor: const Color(0xFFFFFBF2),
@@ -358,6 +359,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             children: [
                               Text(user['name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFF4A1010))),
                               const SizedBox(width: 8),
+                              // ONGOING FLAG: Checks if user has an active/sanctioned project
                               if (user['isOngoing'] == true) 
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -413,7 +415,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Icon(icon, size: 16, color: const Color(0xFFB8962E)),
         const SizedBox(width: 8),
         Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-        Expanded(child: Text(value, style: const TextStyle(fontSize: 13, color: Colors.black87), overflow: TextOverflow.ellipsis)),
+        Text(value, style: const TextStyle(fontSize: 13, color: Colors.black87, fontWeight: FontWeight.w400)),
       ],
     );
   }
@@ -423,7 +425,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("Delete User?"),
-        content: Text("Permanently delete ${user['name']}?"),
+        content: Text("Permanently delete ${user['name']}? This action cannot be undone."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
           TextButton(
@@ -458,7 +460,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           Expanded(
             child: notifications.isEmpty 
-              ? const Center(child: Text("No new updates"))
+              ? const Center(child: Text("No new notifications"))
               : ListView.builder(
                   itemCount: notifications.length, 
                   itemBuilder: (context, index) => ListTile(

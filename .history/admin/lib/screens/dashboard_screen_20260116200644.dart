@@ -20,6 +20,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<Map<String, dynamic>> notifications = [];
   bool isLoading = true;
 
+  // Stream subscriptions for real-time updates
   StreamSubscription? _projectsSubscription;
   StreamSubscription? _usersSubscription;
 
@@ -36,21 +37,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.dispose();
   }
 
-  /// Real-time listeners automatically "refresh" the screen whenever 
-  /// data in Firebase changes because of the setState inside the listener.
   void _startRealTimeListeners() {
     setState(() => isLoading = true);
 
+    // Listen to Projects and Users simultaneously
     _projectsSubscription = FirebaseFirestore.instance
         .collection('projects')
         .snapshots()
         .listen((projectsSnap) {
       
-      _usersSubscription?.cancel(); 
-      _usersSubscription = FirebaseFirestore.instance
+      FirebaseFirestore.instance
           .collection('users')
           .snapshots()
           .listen((usersSnap) {
+        
         _processData(projectsSnap, usersSnap);
       });
     });
@@ -58,33 +58,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _processData(QuerySnapshot projectsSnap, QuerySnapshot usersSnap) {
     try {
-      // We use Sets of User IDs for reliable mapping
-      final Set<String> idsWithOngoing = {};
-      final Set<String> idsWithProposals = {};
+      final Set<String> usersWithOngoing = {};
+      final Set<String> usersWithProposals = {};
       final Map<String, Map<String, dynamic>> byDistrict = {};
 
-      // 1. Process Projects
       for (final doc in projectsSnap.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        final String dName = (data['district'] ?? '').toString().trim();
-        final String uId = (data['userId'] ?? '').toString().trim();
-        final String status = (data['status'] ?? 'pending').toString().toLowerCase();
+        final districtName = (data['district'] ?? '').toString().trim();
+        final userName = (data['userName'] ?? '').toString().trim();
+        final status = (data['status'] ?? 'pending').toString().toLowerCase();
         final bool isSanctioned = data['isSanctioned'] == true;
 
-        if (uId.isNotEmpty) {
-          idsWithProposals.add(uId);
-          // Flag as ongoing if sanctioned OR status is specifically 'ongoing'
-          if (isSanctioned || status == 'ongoing') {
-            idsWithOngoing.add(uId);
+        if (userName.isNotEmpty) {
+          usersWithProposals.add(userName);
+          // Ongoing if not pending
+          if (isSanctioned || status != 'pending') {
+            usersWithOngoing.add(userName);
           }
         }
 
-        if (dName.isEmpty || dName.toLowerCase() == 'null') continue;
+        if (districtName.isEmpty || districtName.toLowerCase() == 'null') continue;
 
-        final entry = byDistrict.putIfAbsent(dName, () {
+        final entry = byDistrict.putIfAbsent(districtName, () {
           return <String, dynamic>{
-            'id': dName,
-            'name': dName,
+            'id': districtName,
+            'name': districtName,
             'places': 0,
             'newRequests': 0,
             '_placeSet': <String>{},
@@ -102,48 +100,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       }
 
-      // 2. Process Users
-      final List<Map<String, dynamic>> allUsers = usersSnap.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        final String currentUserId = doc.id;
-        
-        // Helper to sanitize "null" or empty strings
-        String sanitize(dynamic value) {
-          if (value == null) return 'Not Assigned';
-          String valStr = value.toString().trim();
-          if (valStr.isEmpty || valStr.toLowerCase() == 'null') return 'Not Assigned';
-          return valStr;
-        }
-
-        return {
-          'id': currentUserId,
-          'name': data['name'] ?? data['contactName'] ?? 'Unknown User',
-          'phone': data['phone'] ?? data['phoneNumber'] ?? data['contactPhone'] ?? 'N/A',
-          'district': sanitize(data['district']),
-          'taluk': sanitize(data['taluk']),
-          'isOngoing': idsWithOngoing.contains(currentUserId),
-          'hasProposal': idsWithProposals.contains(currentUserId),
-        };
-      }).toList();
-
-      // Sort Users A-Z
-      allUsers.sort((a, b) => a['name'].toString().toLowerCase().compareTo(b['name'].toString().toLowerCase()));
+      // Process Users
+      final List<Map<String, dynamic>> processedUsers = usersSnap.docs
+          .map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            final name = data['name'] ?? '';
+            return {
+              'id': doc.id,
+              'name': name,
+              'email': data['email'] ?? '',
+              'phone': data['phoneNumber'] ?? data['phone'] ?? 'N/A',
+              'district': data['district'] ?? 'Not Specified',
+              'taluk': data['taluk'] ?? 'Not Specified',
+              'isOngoing': usersWithOngoing.contains(name),
+              'hasProposal': usersWithProposals.contains(name),
+            };
+          })
+          .where((u) => u['hasProposal'] == true)
+          .toList();
 
       setState(() {
         districts = byDistrict.values.toList();
-        districts.sort((a, b) {
-          int countA = a['newRequests'] as int;
-          int countB = b['newRequests'] as int;
-          if (countB != countA) return countB.compareTo(countA);
-          return a['name'].toString().compareTo(b['name'].toString());
-        });
-
-        users = allUsers; 
+        districts.sort((a, b) => (b['newRequests'] as int).compareTo(a['newRequests'] as int));
+        users = processedUsers;
         isLoading = false;
-        notifications = [{'id': '1', 'message': 'Database Updated', 'time': 'Just now', 'read': false}];
+        
+        // Mock notifications for UI consistency
+        notifications = [
+          {'id': '1', 'message': 'Live Sync Active', 'time': 'Just now', 'read': false},
+        ];
       });
     } catch (e) {
-      debugPrint('Error processing data: $e');
+      debugPrint('Error processing real-time data: $e');
     }
   }
 
@@ -198,7 +186,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Admin Dashboard', style: TextStyle(color: Color(0xFFFFF4D6), fontSize: 20, fontWeight: FontWeight.bold)),
-                          Text('Real-time Monitoring', style: TextStyle(color: Color(0xFFD4AF37), fontSize: 13)),
+                          Text('Live Proposal Tracking', style: TextStyle(color: Color(0xFFD4AF37), fontSize: 13)),
                         ],
                       ),
                     ],
@@ -252,8 +240,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: TextField(
         onChanged: (value) => setState(() => searchQuery = value),
         decoration: InputDecoration(
-          hintText: activeTab == 0 ? 'Search districts...' : 'Search name or phone...',
-          hintStyle: const TextStyle(color: Color(0xFF4A1010), fontSize: 14),
+          hintText: activeTab == 0 ? 'Search districts...' : 'Search by name or email...',
+          hintStyle: const TextStyle(color: Color(0xFF4A1010)),
           prefixIcon: const Icon(Icons.search, color: Color(0xFF6D1B1B)),
           filled: true,
           fillColor: const Color(0xFFFFFBF2),
@@ -267,10 +255,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildTab(String label, IconData icon, int index) {
     final isActive = activeTab == index;
     return GestureDetector(
-      onTap: () => setState(() {
-        activeTab = index;
-        searchQuery = '';
-      }),
+      onTap: () => setState(() => activeTab = index),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
@@ -291,8 +276,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildDistrictsList() {
     final filtered = districts.where((d) => d['name'].toString().toLowerCase().contains(searchQuery.toLowerCase())).toList();
-    if (filtered.isEmpty) return const Center(child: Text("No districts found"));
-
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: filtered.length,
@@ -326,13 +309,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildUsersList() {
-    final filtered = users.where((u) => 
-      u['name'].toString().toLowerCase().contains(searchQuery.toLowerCase()) || 
-      u['phone'].toString().toLowerCase().contains(searchQuery.toLowerCase())
-    ).toList();
-
-    if (filtered.isEmpty) return const Center(child: Text("No users found"));
-
+    final filtered = users.where((u) => u['name'].toString().toLowerCase().contains(searchQuery.toLowerCase()) || u['email'].toString().toLowerCase().contains(searchQuery.toLowerCase())).toList();
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: filtered.length,
@@ -350,52 +327,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(user['name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFF4A1010))),
-                              const SizedBox(width: 8),
-                              if (user['isOngoing'] == true) 
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.shade50,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.green.shade700),
-                                  ),
-                                  child: Text("ONGOING", style: TextStyle(color: Colors.green.shade700, fontSize: 10, fontWeight: FontWeight.bold)),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(user['phone'], style: const TextStyle(color: Color(0xFF6D1B1B), fontWeight: FontWeight.bold, fontSize: 14)),
-                        ],
-                      ),
+                    Row(
+                      children: [
+                        Text(user['name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF4A1010))),
+                        if (user['isOngoing'] == true) ...[
+                          const SizedBox(width: 8),
+                          const Icon(Icons.flag, color: Colors.green, size: 20),
+                        ]
+                      ],
                     ),
-                    if (user['hasProposal'] == false)
-                      const Text("(No Proposal)", style: TextStyle(color: Colors.grey, fontSize: 11, fontStyle: FontStyle.italic)),
+                    Text(user['phone'], style: const TextStyle(color: Color(0xFF6D1B1B), fontWeight: FontWeight.w600)),
                   ],
                 ),
-                const Divider(height: 24, thickness: 0.5),
+                const SizedBox(height: 8),
+                Text(user['email'], style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                const Divider(height: 24),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildUserDetailRow(Icons.map, "District: ", user['district']),
-                          const SizedBox(height: 6),
-                          _buildUserDetailRow(Icons.location_city, "Taluk: ", user['taluk']),
-                        ],
-                      ),
+                    Row(
+                      children: [
+                        const Icon(Icons.location_on, size: 16, color: Color(0xFFB8962E)),
+                        const SizedBox(width: 6),
+                        Text("${user['taluk']}, ${user['district']}", style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                      ],
                     ),
-                    IconButton(
+                    TextButton.icon(
                       onPressed: () => _confirmRemoveUser(user),
-                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 22),
+                      icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                      label: const Text("Remove", style: TextStyle(color: Colors.red, fontSize: 12)),
                     )
                   ],
                 ),
@@ -407,23 +367,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildUserDetailRow(IconData icon, String label, String value) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: const Color(0xFFB8962E)),
-        const SizedBox(width: 8),
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-        Expanded(child: Text(value, style: const TextStyle(fontSize: 13, color: Colors.black87), overflow: TextOverflow.ellipsis)),
-      ],
-    );
-  }
-
   void _confirmRemoveUser(Map<String, dynamic> user) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Delete User?"),
-        content: Text("Permanently delete ${user['name']}?"),
+        title: const Text("Remove User?"),
+        content: Text("Delete ${user['name']}? This is permanent."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
           TextButton(
@@ -431,7 +380,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               await FirebaseFirestore.instance.collection('users').doc(user['id']).delete();
               Navigator.pop(context);
             },
-            child: const Text("Delete", style: TextStyle(color: Colors.red)),
+            child: const Text("Remove", style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -456,18 +405,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
           ),
-          Expanded(
-            child: notifications.isEmpty 
-              ? const Center(child: Text("No new updates"))
-              : ListView.builder(
-                  itemCount: notifications.length, 
-                  itemBuilder: (context, index) => ListTile(
-                    leading: const Icon(Icons.info_outline, color: Color(0xFF6D1B1B)),
-                    title: Text(notifications[index]['message']),
-                    subtitle: Text(notifications[index]['time']),
-                  )
-                )
-          ),
+          Expanded(child: ListView.builder(itemCount: notifications.length, itemBuilder: (context, index) => ListTile(title: Text(notifications[index]['message'])))),
         ],
       ),
     );
@@ -480,11 +418,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red), 
-              title: const Text('Logout'), 
-              onTap: () => Navigator.pop(context),
-            ),
+            ListTile(leading: const Icon(Icons.logout, color: Colors.red), title: const Text('Logout'), onTap: () => Navigator.pop(context)),
           ],
         ),
       ),
