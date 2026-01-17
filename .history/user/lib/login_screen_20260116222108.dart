@@ -16,21 +16,18 @@ class _LoginScreenState extends State<LoginScreen> {
   final _auth = FirebaseAuth.instance;
   final _firestore = FirebaseFirestore.instance;
   final _formKey = GlobalKey<FormState>();
-
+  
+  // This controller accepts Username OR Phone Number
   final TextEditingController _identifierController = TextEditingController();
   final TextEditingController _password = TextEditingController();
 
   bool _isLoading = false;
   bool _obscurePassword = true;
 
-  // Theme Colors
+  // ARANPANI THEME COLORS
   final Color _maroon = const Color(0xFF6D1B1B);
-  final Color _templeMaroon = const Color(0xFF7A1E1E);
   final Color _gold = const Color(0xFFD4AF37);
-  final Color _darkGold = const Color(0xFFB8962E);
   final Color _bgColor = const Color(0xFFFFF7E8);
-  final Color _inputFill = const Color(0xFFFFFBF2);
-  final Color _goldTextColor = const Color(0xFFFFF4D6);
 
   void _showError(String message) {
     if (!mounted) return;
@@ -51,10 +48,11 @@ class _LoginScreenState extends State<LoginScreen> {
       String input = _identifierController.text.trim().toLowerCase();
       String finalEmail = "";
 
-      // Logic: Handle Phone Number or Username
+      // 1. CHECK IF INPUT IS A PHONE NUMBER (10 digits)
       bool isPhone = RegExp(r'^[0-9]+$').hasMatch(input) && input.length == 10;
 
       if (isPhone) {
+        // If they entered a phone, we find the username associated with it
         final snapshot = await _firestore
             .collection('users')
             .where('phoneNumber', isEqualTo: input)
@@ -62,15 +60,19 @@ class _LoginScreenState extends State<LoginScreen> {
             .get();
 
         if (snapshot.docs.isEmpty) {
-          throw 'Not a registered user. Please Sign Up to continue.';
+          throw 'This phone number is not registered.';
         }
         
         String username = snapshot.docs.first.get('username');
         finalEmail = "$username@aranpani.com";
       } else {
+        // 2. USERNAME LOGIN (This answers your question!)
+        // It simply takes the username and adds the virtual domain.
+        // This is fast because it doesn't need to check Firestore.
         finalEmail = "$input@aranpani.com";
       }
 
+      // 3. PERFORM SIGN IN
       await _auth.signInWithEmailAndPassword(
         email: finalEmail,
         password: _password.text.trim(),
@@ -83,12 +85,13 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } on FirebaseAuthException catch (e) {
-      // Specific error handling for unregistered users
+      String msg = "Login failed.";
       if (e.code == 'user-not-found' || e.code == 'invalid-credential') {
-        _showError("Not a registered user. Please Sign Up to continue.");
-      } else {
-        _showError("Login failed: ${e.message}");
+        msg = "Invalid credentials. Please check your username/phone and password.";
+      } else if (e.code == 'wrong-password') {
+        msg = "Incorrect password.";
       }
+      _showError(msg);
     } catch (e) {
       _showError(e.toString());
     } finally {
@@ -107,45 +110,11 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               const SizedBox(height: 40),
               
-              // --- LOGO WITH IMAGE ASSET ---
-              Container(
-                width: 100,
-                height: 100,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [_gold, _darkGold],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 10,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(4), // Border thickness for gradient
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    child: ClipOval(
-                      child: Image.asset(
-                        'assets/images/shiva.png',
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) =>
-                            Icon(Icons.temple_hindu, size: 50, color: _maroon),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              // LOGO SECTION
+              _buildLogo(),
 
               const SizedBox(height: 16),
+
               Text(
                 'ShivPunarva',
                 style: GoogleFonts.cinzelDecorative(
@@ -157,7 +126,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
               const SizedBox(height: 32),
 
-              // --- LOGIN FORM CONTAINER ---
+              // LOGIN CARD
               Container(
                 padding: const EdgeInsets.all(22),
                 decoration: BoxDecoration(
@@ -166,32 +135,35 @@ class _LoginScreenState extends State<LoginScreen> {
                   border: Border.all(color: _gold, width: 1.2),
                   boxShadow: [
                     BoxShadow(
-                      color: _maroon.withOpacity(0.05),
-                      blurRadius: 15,
-                      offset: const Offset(0, 5),
-                    ),
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    )
                   ],
                 ),
                 child: Form(
                   key: _formKey,
                   child: Column(
                     children: [
+                      // USERNAME OR PHONE FIELD
                       TextFormField(
                         controller: _identifierController,
                         style: const TextStyle(color: Colors.black),
                         decoration: InputDecoration(
-                          labelText: 'Username or Phone',
+                          labelText: 'Username or Phone Number',
                           prefixIcon: Icon(Icons.person_outline, color: _maroon),
                           filled: true,
-                          fillColor: _inputFill,
+                          fillColor: const Color(0xFFFFFBF2),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: _gold.withOpacity(0.5)),
                           ),
                         ),
                         validator: (v) => v == null || v.isEmpty ? 'Required' : null,
                       ),
+
                       const SizedBox(height: 18),
+
+                      // PASSWORD FIELD
                       TextFormField(
                         controller: _password,
                         obscureText: _obscurePassword,
@@ -200,39 +172,50 @@ class _LoginScreenState extends State<LoginScreen> {
                           labelText: 'Password',
                           prefixIcon: Icon(Icons.lock_outline, color: _maroon),
                           suffixIcon: IconButton(
-                            icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+                            icon: Icon(
+                              _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                              color: _maroon,
+                            ),
                             onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                           ),
                           filled: true,
-                          fillColor: _inputFill,
+                          fillColor: const Color(0xFFFFFBF2),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: _gold.withOpacity(0.5)),
                           ),
                         ),
                         validator: (v) => v != null && v.length >= 6 ? null : 'Min 6 chars',
                       ),
+
                       const SizedBox(height: 28),
+
+                      // SIGN IN BUTTON
                       SizedBox(
                         width: double.infinity,
                         height: 54,
                         child: ElevatedButton(
                           onPressed: _isLoading ? null : _login,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: _templeMaroon,
-                            elevation: 2,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            backgroundColor: const Color(0xFF7A1E1E),
+                            elevation: 3,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
                           ),
-                          child: _isLoading 
-                            ? const CircularProgressIndicator(color: Colors.white) 
-                            : Text(
-                                'Sign In', 
-                                style: TextStyle(
-                                  color: _goldTextColor,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : const Text(
+                                  'Sign In',
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFFFFF4D6),
+                                  ),
                                 ),
-                              ),
                         ),
                       ),
                     ],
@@ -240,33 +223,60 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 22),
 
-              // --- UPDATED FOOTER DESIGN ---
+              // FOOTER
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text(
-                    'New to Aranpani? ',
-                    style: TextStyle(color: Colors.black87),
-                  ),
-                  GestureDetector(
-                    onTap: () => Navigator.push(
-                      context, 
-                      MaterialPageRoute(builder: (_) => const SignupScreen())
+                  const Text('New here?'),
+                  TextButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SignupScreen()),
                     ),
                     child: Text(
-                      'Sign Up Here',
+                      'Create Account',
                       style: TextStyle(
                         color: _maroon,
                         fontWeight: FontWeight.bold,
-                        decoration: TextDecoration.underline,
                       ),
                     ),
                   ),
                 ],
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLogo() {
+    return Container(
+      width: 96,
+      height: 96,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [_gold, const Color(0xFFB8962E)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 12,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(5),
+        child: ClipOval(
+          child: Image.asset(
+            'assets/images/shiva.png',
+            fit: BoxFit.cover,
           ),
         ),
       ),

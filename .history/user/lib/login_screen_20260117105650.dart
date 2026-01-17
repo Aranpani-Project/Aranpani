@@ -23,7 +23,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
 
-  // Theme Colors
+  // Custom Temple Theme Colors
   final Color _maroon = const Color(0xFF6D1B1B);
   final Color _templeMaroon = const Color(0xFF7A1E1E);
   final Color _gold = const Color(0xFFD4AF37);
@@ -68,6 +68,7 @@ class _LoginScreenState extends State<LoginScreen> {
         String username = snapshot.docs.first.get('username');
         finalEmail = "$username@aranpani.com";
       } else {
+        // Direct username login
         finalEmail = "$input@aranpani.com";
       }
 
@@ -83,7 +84,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } on FirebaseAuthException catch (e) {
-      // Specific error handling for unregistered users
+      // Specifically handle "user not found" scenario
       if (e.code == 'user-not-found' || e.code == 'invalid-credential') {
         _showError("Not a registered user. Please Sign Up to continue.");
       } else {
@@ -106,11 +107,11 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             children: [
               const SizedBox(height: 40),
-              
-              // --- LOGO WITH IMAGE ASSET ---
+
+              // --- LATEST LOGO DESIGN ---
               Container(
-                width: 100,
-                height: 100,
+                width: 96,
+                height: 96,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: LinearGradient(
@@ -121,31 +122,26 @@ class _LoginScreenState extends State<LoginScreen> {
                   boxShadow: const [
                     BoxShadow(
                       color: Colors.black26,
-                      blurRadius: 10,
-                      offset: Offset(0, 4),
+                      blurRadius: 12,
+                      offset: Offset(0, 6),
                     ),
                   ],
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.all(4), // Border thickness for gradient
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    child: ClipOval(
-                      child: Image.asset(
-                        'assets/images/shiva.png',
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) =>
-                            Icon(Icons.temple_hindu, size: 50, color: _maroon),
-                      ),
+                  padding: const EdgeInsets.all(5),
+                  child: ClipOval(
+                    child: Image.asset(
+                      'assets/images/shiva.png',
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const Icon(Icons.temple_hindu, size: 50, color: Colors.white),
                     ),
                   ),
                 ),
               ),
 
               const SizedBox(height: 16),
+
               Text(
                 'ShivPunarva',
                 style: GoogleFonts.cinzelDecorative(
@@ -157,20 +153,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
               const SizedBox(height: 32),
 
-              // --- LOGIN FORM CONTAINER ---
+              // --- LOGIN BOX ---
               Container(
                 padding: const EdgeInsets.all(22),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(color: _gold, width: 1.2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _maroon.withOpacity(0.05),
-                      blurRadius: 15,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
                 ),
                 child: Form(
                   key: _formKey,
@@ -186,7 +175,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           fillColor: _inputFill,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: _gold.withOpacity(0.5)),
                           ),
                         ),
                         validator: (v) => v == null || v.isEmpty ? 'Required' : null,
@@ -207,7 +195,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           fillColor: _inputFill,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: _gold.withOpacity(0.5)),
                           ),
                         ),
                         validator: (v) => v != null && v.length >= 6 ? null : 'Min 6 chars',
@@ -220,19 +207,21 @@ class _LoginScreenState extends State<LoginScreen> {
                           onPressed: _isLoading ? null : _login,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _templeMaroon,
-                            elevation: 2,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            elevation: 3,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
                           ),
-                          child: _isLoading 
-                            ? const CircularProgressIndicator(color: Colors.white) 
-                            : Text(
-                                'Sign In', 
-                                style: TextStyle(
-                                  color: _goldTextColor,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
+                          child: _isLoading
+                              ? const CircularProgressIndicator(color: Colors.white)
+                              : Text(
+                                  'Sign In',
+                                  style: TextStyle(
+                                    color: _goldTextColor,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                              ),
                         ),
                       ),
                     ],
@@ -240,27 +229,26 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 22),
 
-              // --- UPDATED FOOTER DESIGN ---
+              // --- FOOTER: NEW TO ARANPANI ---
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const Text(
-                    'New to Aranpani? ',
+                    'New to Aranpani?',
                     style: TextStyle(color: Colors.black87),
                   ),
-                  GestureDetector(
-                    onTap: () => Navigator.push(
-                      context, 
-                      MaterialPageRoute(builder: (_) => const SignupScreen())
+                  TextButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SignupScreen()),
                     ),
                     child: Text(
                       'Sign Up Here',
                       style: TextStyle(
                         color: _maroon,
                         fontWeight: FontWeight.bold,
-                        decoration: TextDecoration.underline,
                       ),
                     ),
                   ),

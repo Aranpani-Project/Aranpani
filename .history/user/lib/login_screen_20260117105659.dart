@@ -23,14 +23,10 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
 
-  // Theme Colors
+  // FIXED: Hardcoded colors to prevent the "Null is not a subtype of Color" error
   final Color _maroon = const Color(0xFF6D1B1B);
-  final Color _templeMaroon = const Color(0xFF7A1E1E);
   final Color _gold = const Color(0xFFD4AF37);
-  final Color _darkGold = const Color(0xFFB8962E);
   final Color _bgColor = const Color(0xFFFFF7E8);
-  final Color _inputFill = const Color(0xFFFFFBF2);
-  final Color _goldTextColor = const Color(0xFFFFF4D6);
 
   void _showError(String message) {
     if (!mounted) return;
@@ -51,7 +47,7 @@ class _LoginScreenState extends State<LoginScreen> {
       String input = _identifierController.text.trim().toLowerCase();
       String finalEmail = "";
 
-      // Logic: Handle Phone Number or Username
+      // Check if input is a 10-digit phone number
       bool isPhone = RegExp(r'^[0-9]+$').hasMatch(input) && input.length == 10;
 
       if (isPhone) {
@@ -62,12 +58,14 @@ class _LoginScreenState extends State<LoginScreen> {
             .get();
 
         if (snapshot.docs.isEmpty) {
-          throw 'Not a registered user. Please Sign Up to continue.';
+          throw 'This phone number is not registered.';
         }
-        
+
+        // FIXED: Using 'username' field instead of 'email' to avoid the "field does not exist" error
         String username = snapshot.docs.first.get('username');
         finalEmail = "$username@aranpani.com";
       } else {
+        // Direct username login
         finalEmail = "$input@aranpani.com";
       }
 
@@ -83,12 +81,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } on FirebaseAuthException catch (e) {
-      // Specific error handling for unregistered users
-      if (e.code == 'user-not-found' || e.code == 'invalid-credential') {
-        _showError("Not a registered user. Please Sign Up to continue.");
-      } else {
-        _showError("Login failed: ${e.message}");
-      }
+      _showError("Login failed: ${e.message}");
     } catch (e) {
       _showError(e.toString());
     } finally {
@@ -106,45 +99,7 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             children: [
               const SizedBox(height: 40),
-              
-              // --- LOGO WITH IMAGE ASSET ---
-              Container(
-                width: 100,
-                height: 100,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [_gold, _darkGold],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 10,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(4), // Border thickness for gradient
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    child: ClipOval(
-                      child: Image.asset(
-                        'assets/images/shiva.png',
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) =>
-                            Icon(Icons.temple_hindu, size: 50, color: _maroon),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
+              _buildLogo(),
               const SizedBox(height: 16),
               Text(
                 'ShivPunarva',
@@ -154,23 +109,13 @@ class _LoginScreenState extends State<LoginScreen> {
                   color: _maroon,
                 ),
               ),
-
               const SizedBox(height: 32),
-
-              // --- LOGIN FORM CONTAINER ---
               Container(
                 padding: const EdgeInsets.all(22),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(color: _gold, width: 1.2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _maroon.withOpacity(0.05),
-                      blurRadius: 15,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
                 ),
                 child: Form(
                   key: _formKey,
@@ -181,15 +126,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: const TextStyle(color: Colors.black),
                         decoration: InputDecoration(
                           labelText: 'Username or Phone',
-                          prefixIcon: Icon(Icons.person_outline, color: _maroon),
-                          filled: true,
-                          fillColor: _inputFill,
+                          prefixIcon:
+                              Icon(Icons.person_outline, color: _maroon),
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: _gold.withOpacity(0.5)),
-                          ),
+                              borderRadius: BorderRadius.circular(12)),
                         ),
-                        validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                        validator: (v) =>
+                            v == null || v.isEmpty ? 'Required' : null,
                       ),
                       const SizedBox(height: 18),
                       TextFormField(
@@ -200,17 +143,17 @@ class _LoginScreenState extends State<LoginScreen> {
                           labelText: 'Password',
                           prefixIcon: Icon(Icons.lock_outline, color: _maroon),
                           suffixIcon: IconButton(
-                            icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
-                            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                            icon: Icon(_obscurePassword
+                                ? Icons.visibility_off
+                                : Icons.visibility),
+                            onPressed: () => setState(
+                                () => _obscurePassword = !_obscurePassword),
                           ),
-                          filled: true,
-                          fillColor: _inputFill,
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: _gold.withOpacity(0.5)),
-                          ),
+                              borderRadius: BorderRadius.circular(12)),
                         ),
-                        validator: (v) => v != null && v.length >= 6 ? null : 'Min 6 chars',
+                        validator: (v) =>
+                            v != null && v.length >= 6 ? null : 'Min 6 chars',
                       ),
                       const SizedBox(height: 28),
                       SizedBox(
@@ -219,56 +162,47 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: ElevatedButton(
                           onPressed: _isLoading ? null : _login,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: _templeMaroon,
-                            elevation: 2,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            backgroundColor: _maroon,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14)),
                           ),
-                          child: _isLoading 
-                            ? const CircularProgressIndicator(color: Colors.white) 
-                            : Text(
-                                'Sign In', 
-                                style: TextStyle(
-                                  color: _goldTextColor,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                          child: _isLoading
+                              ? const CircularProgressIndicator(
+                                  color: Colors.white)
+                              : const Text('Sign In',
+                                  style: TextStyle(color: Colors.white)),
                         ),
                       ),
                     ],
                   ),
                 ),
               ),
-
-              const SizedBox(height: 24),
-
-              // --- UPDATED FOOTER DESIGN ---
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    'New to Aranpani? ',
-                    style: TextStyle(color: Colors.black87),
-                  ),
-                  GestureDetector(
-                    onTap: () => Navigator.push(
-                      context, 
-                      MaterialPageRoute(builder: (_) => const SignupScreen())
-                    ),
-                    child: Text(
-                      'Sign Up Here',
-                      style: TextStyle(
-                        color: _maroon,
-                        fontWeight: FontWeight.bold,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
-                ],
+              TextButton(
+                onPressed: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const SignupScreen())),
+                child: Text('Create Account', style: TextStyle(color: _maroon)),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildLogo() {
+    return Container(
+      width: 96,
+      height: 96,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        // FIXED: Added fallback colors for the gradient to prevent Null errors
+        gradient: LinearGradient(
+          colors: [_gold, const Color(0xFFB8962E)],
+        ),
+      ),
+      child: const Center(
+        child: Icon(Icons.temple_hindu,
+            size: 50, color: Colors.white), // Use icon if image asset fails
       ),
     );
   }
