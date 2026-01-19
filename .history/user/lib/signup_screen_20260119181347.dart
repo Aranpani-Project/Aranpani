@@ -67,30 +67,29 @@ class _SignupScreenState extends State<SignupScreen> {
   @override
   void initState() {
     super.initState();
-
-    // Listeners for real-time duplicate checking
-    _username.addListener(() {
-      if (_username.text.length >= 4 && _usernameError == null && !_checkingUsername) {
-         _checkDuplicate("username", _username.text.trim().toLowerCase());
-      } else if (_username.text.length < 4) {
-        setState(() => _usernameError = null);
+    
+    // Listeners to trigger database checks when user leaves the field
+    _usernameFocus.addListener(() {
+      if (!_usernameFocus.hasFocus && _username.text.length >= 4) {
+        _checkDuplicate("username", _username.text.trim().toLowerCase());
       }
     });
 
-    _phone.addListener(() {
-      if (_phone.text.length == 10 && _phoneError == null && !_checkingPhone) {
+    _phoneFocus.addListener(() {
+      if (!_phoneFocus.hasFocus && _phone.text.length == 10) {
         _checkDuplicate("phoneNumber", _phone.text.trim());
-      } else if (_phone.text.length != 10) {
-        setState(() => _phoneError = null);
       }
     });
 
-    _aadhar.addListener(() {
-      if (_aadhar.text.length == 12 && _aadharError == null && !_checkingAadhar) {
+    _aadharFocus.addListener(() {
+      if (!_aadharFocus.hasFocus && _aadhar.text.length == 12) {
         _checkDuplicate("aadharNumber", _aadhar.text.trim());
-      } else if (_aadhar.text.length != 12) {
-        setState(() => _aadharError = null);
       }
+    });
+    
+    // Update UI when typing phone to show/hide OTP button
+    _phone.addListener(() {
+      if(_phone.text.length == 10) setState(() {});
     });
   }
 
@@ -117,9 +116,9 @@ class _SignupScreenState extends State<SignupScreen> {
     if (value.isEmpty) return;
 
     setState(() {
-      if (field == "phoneNumber") _checkingPhone = true;
-      if (field == "aadharNumber") _checkingAadhar = true;
-      if (field == "username") _checkingUsername = true;
+      if (field == "phoneNumber") { _checkingPhone = true; _phoneError = null; }
+      if (field == "aadharNumber") { _checkingAadhar = true; _aadharError = null; }
+      if (field == "username") { _checkingUsername = true; _usernameError = null; }
     });
 
     try {
@@ -134,14 +133,10 @@ class _SignupScreenState extends State<SignupScreen> {
           if (field == "username") _usernameError = "Username already taken";
           if (field == "phoneNumber") _phoneError = "Phone already registered";
           if (field == "aadharNumber") _aadharError = "Aadhar already registered";
-        } else {
-          if (field == "username") _usernameError = null;
-          if (field == "phoneNumber") _phoneError = null;
-          if (field == "aadharNumber") _aadharError = null;
         }
       });
       
-      // Trigger validation to show the error message immediately under the field
+      // Force form to re-validate to show error immediately
       _formKey.currentState?.validate();
 
     } catch (e) {
@@ -156,6 +151,8 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Future<void> _sendOTP() async {
+    // Re-check phone duplicate before sending
+    await _checkDuplicate("phoneNumber", _phone.text.trim());
     if (_phoneError != null) return;
 
     setState(() => _otpSending = true);
@@ -176,7 +173,7 @@ class _SignupScreenState extends State<SignupScreen> {
         throw "Failed to send OTP";
       }
     } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error sending OTP. Try again.")));
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error sending OTP. Try again.")));
     }
     setState(() => _otpSending = false);
   }
@@ -204,15 +201,12 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Future<void> _signup() async {
-    // 1. Validate Form (Mandatory checks)
-    if (!_formKey.currentState!.validate()) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please fill all mandatory fields")));
-       return;
-    }
+    // 1. Validate Form
+    if (!_formKey.currentState!.validate()) return;
     
-    // 2. Extra checks for duplicate errors
+    // 2. Extra checks for duplicate errors (in case focus node didn't fire)
     if (_usernameError != null || _phoneError != null || _aadharError != null) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please resolve registered/taken data errors")));
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please fix errors in the form")));
        return;
     }
 
@@ -314,7 +308,6 @@ class _SignupScreenState extends State<SignupScreen> {
                         ),
                         child: Form(
                           key: _formKey,
-                          autovalidateMode: AutovalidateMode.onUserInteraction, // Mandatory field check on touch
                           child: Column(
                             children: [
                               _input(_name, "Full Name", Icons.person_outline),
@@ -374,16 +367,16 @@ class _SignupScreenState extends State<SignupScreen> {
     return Container(
       width: 90,
       height: 90,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: LinearGradient(
+          gradient: const LinearGradient(
               colors: [Color(0xFFD4AF37), Color(0xFFB8962E)])),
       child: Padding(
           padding: const EdgeInsets.all(4),
           child: ClipOval(
               child: Image.asset('assets/images/shiva.png',
                   fit: BoxFit.cover,
-                  errorBuilder: (c, e, s) => const Icon(Icons.person, size: 50, color: Colors.white),))),
+                  errorBuilder: (c, e, s) => Icon(Icons.person, size: 50, color: Colors.white),))),
     );
   }
 
@@ -412,9 +405,8 @@ class _SignupScreenState extends State<SignupScreen> {
                                   child: CircularProgressIndicator(strokeWidth: 2))
                               : null),
                   validator: (v) {
-                    if (v == null || v.isEmpty) return "Field is mandatory";
-                    if (v.length != 10) return "Enter 10 digits";
-                    return _phoneError; 
+                    if (v == null || v.length != 10) return "Enter 10 digits";
+                    return _phoneError; // Shows "Already registered" from Firestore
                   },
                 ),
               ),
@@ -423,7 +415,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   _phoneError == null &&
                   !_checkingPhone)
                 Padding(
-                  padding: const EdgeInsets.only(left: 8.0, top: 4.0),
+                  padding: const EdgeInsets.only(left: 8.0),
                   child: SizedBox(
                     height: 52,
                     child: ElevatedButton(
@@ -546,11 +538,8 @@ class _SignupScreenState extends State<SignupScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2)))
               : null),
       validator: (v) {
-        if (v == null || v.isEmpty) return "Field is mandatory";
-        if (validationType == "username") {
-          if (v.length < 4) return "Min 4 characters";
-          return _usernameError;
-        }
+        if (v == null || v.isEmpty) return "Required";
+        if (validationType == "username") return _usernameError;
         if (validationType == "aadhar") {
           if (v.length != 12) return "Enter 12 digits";
           return _aadharError;
@@ -567,7 +556,7 @@ class _SignupScreenState extends State<SignupScreen> {
       obscureText: true,
       decoration: _fieldDecoration(lbl, Icons.lock_outline),
       validator: (v) {
-        if (v == null || v.isEmpty) return "Field is mandatory";
+        if (v == null || v.isEmpty) return "Required";
         if (!isConfirm && v.length < 6) return "Min 6 chars";
         if (isConfirm && v != _password.text) return "Passwords don't match";
         return null;
