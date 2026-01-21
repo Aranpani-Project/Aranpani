@@ -4,7 +4,10 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+
+// --- IMPORTS ---
 import 'project_chat_section.dart';
+import 'project_finances_tab.dart'; // <--- THIS IS THE KEY IMPORT
 import '../services/cloudinary_service.dart';
 
 class ProjectOverviewScreen extends StatefulWidget {
@@ -29,12 +32,11 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
   String get _projectId => widget.project['id'] as String;
   String get _userId => (widget.project['userId'] ?? '') as String;
 
-  // --- FIX: READ 'estimatedAmount' INSTEAD OF 'budget' ---
+  // --- READ 'estimatedAmount' OR 'budget' ---
   double get _totalBudget {
     if (widget.project['estimatedAmount'] != null) {
       return double.tryParse(widget.project['estimatedAmount'].toString()) ?? 0.0;
     } else if (widget.project['budget'] != null) {
-      // Fallback just in case old data used 'budget'
       return double.tryParse(widget.project['budget'].toString()) ?? 0.0;
     }
     return 0.0;
@@ -170,7 +172,6 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     final upiCtrl = TextEditingController();
     XFile? qrFile;
     
-    // Validation State
     String? amountErrorText;
 
     await showDialog(
@@ -184,7 +185,6 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Display Budget
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -205,7 +205,6 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                 TextField(
                     controller: amountCtrl,
                     keyboardType: TextInputType.number,
-                    // Real-time Validation
                     onChanged: (value) {
                       double enteredAmount = double.tryParse(value) ?? 0.0;
                       if (enteredAmount > _totalBudget) {
@@ -251,13 +250,11 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                 child: const Text('Cancel')),
             
             ElevatedButton(
-              // Disable button if validation fails
               onPressed: (amountErrorText != null) 
                   ? null 
                   : () async {
                       if (titleCtrl.text.isEmpty || amountCtrl.text.isEmpty) return;
                       
-                      // Safety Check
                       double reqAmount = double.tryParse(amountCtrl.text) ?? 0.0;
                       if (reqAmount > _totalBudget) return;
 
@@ -872,63 +869,65 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
   Widget _transactionsTab() {
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: ElevatedButton.icon(
-            onPressed: _showRequestAmountDialog,
-            icon: const Icon(Icons.add_card),
-            label: const Text('Request Amount from Admin'),
-            style: ElevatedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 50),
-            ),
+        // 1. THE FINANCES DASHBOARD (List & Budget Progress)
+        Expanded(
+          child: ProjectFinancesTab(
+            projectId: _projectId,
+            userId: _userId,
+            totalBudget: _totalBudget, // <--- Budget Passed Correctly Here
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: ElevatedButton.icon(
-            onPressed:
-                _isCompletionRequesting ? null : _requestProjectCompletion,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(double.infinity, 50),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+        
+        // 2. THE BUTTONS (Request Money & Complete Project)
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, -5),
+              )
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _showRequestAmountDialog,
+                  icon: const Icon(Icons.add_card),
+                  label: const Text('Request Amount from Admin'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryMaroon,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 45),
+                  ),
+                ),
               ),
-            ),
-            icon: _isCompletionRequesting
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.flag),
-            label: Text(
-              _isCompletionRequesting
-                  ? 'Sending completion request...'
-                  : 'Request Project Completion',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _isCompletionRequesting ? null : _requestProjectCompletion,
+                  icon: const Icon(Icons.flag),
+                  label: Text(
+                    _isCompletionRequesting
+                        ? 'Sending completion request...'
+                        : 'Request Project Completion',
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.green,
+                    side: const BorderSide(color: Colors.green),
+                    minimumSize: const Size(double.infinity, 45),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 8),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Text(
-            'To request completion:\n'
-            '• At least one work must be completed\n'
-            '• No works in To Do\n'
-            '• No works in Ongoing / Pending Approval\n'
-            'A completion message will be sent to admin in chat.',
-            style: GoogleFonts.poppins(
-                fontSize: 11, color: Colors.grey[700]),
-          ),
-        ),
-        const SizedBox(height: 16),
-        const Expanded(child: SizedBox()),
       ],
     );
   }
@@ -996,7 +995,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                 controller: _tabController,
                 children: [
                   _activitiesTab(),
-                  _transactionsTab(),
+                  _transactionsTab(), // <--- This now uses the new dashboard + buttons
                   _billsTabWrapper(),
                   _feedbackTab(),
                 ],
@@ -1027,7 +1026,7 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
 }
 
 // =========================================================
-// ONGOING TASK CARD (unchanged except for imports)
+// ONGOING TASK CARD
 // =========================================================
 
 class OngoingTaskCard extends StatefulWidget {

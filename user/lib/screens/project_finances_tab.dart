@@ -20,7 +20,6 @@ class ProjectFinancesTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      // Listen for all transactions related to this project
       stream: FirebaseFirestore.instance
           .collection('transactions')
           .where('projectId', isEqualTo: projectId)
@@ -41,8 +40,10 @@ class ProjectFinancesTab extends StatelessWidget {
         
         for (var doc in docs) {
           final data = doc.data();
-          // Logic: Only approved funds are deducted from the budget
-          if (data['status'] == 'approved') {
+          final status = (data['status'] ?? 'pending').toString();
+
+          // Calculate spent if approved OR paid
+          if (status == 'approved' || status == 'paid') {
             final val = data['amount'];
             if (val is num) {
               spentAmount += val.toDouble();
@@ -150,9 +151,10 @@ class ProjectFinancesTab extends StatelessWidget {
       itemBuilder: (context, index) {
         final data = sorted[index].data();
         final status = (data['status'] ?? 'pending').toString().toLowerCase();
+        final txnId = data['transactionId']; // Get the Transaction ID
         
         Color statusColor = Colors.orange;
-        if (status == 'approved') statusColor = Colors.green;
+        if (status == 'approved' || status == 'paid') statusColor = Colors.green;
         if (status == 'rejected') statusColor = Colors.red;
 
         return Card(
@@ -163,10 +165,36 @@ class ProjectFinancesTab extends StatelessWidget {
             side: BorderSide(color: Colors.grey.shade200),
           ),
           child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             title: Text(data['title'] ?? 'Expense Request', 
               style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600)),
-            subtitle: Text(status.toUpperCase(), 
-              style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor)),
+            
+            // --- UPDATED SUBTITLE SECTION ---
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 4),
+                Text(status.toUpperCase(), 
+                  style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor)),
+                
+                // Show Transaction ID if Paid
+                if (status == 'paid' && txnId != null && txnId.toString().isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.green.withOpacity(0.3))
+                    ),
+                    child: Text(
+                      "Txn ID: $txnId",
+                      style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.green[800]),
+                    ),
+                  ),
+              ],
+            ),
+            
             trailing: Text("₹${data['amount']}", 
               style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 15)),
           ),
