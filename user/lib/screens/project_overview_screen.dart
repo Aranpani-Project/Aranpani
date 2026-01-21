@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-
 import 'project_chat_section.dart';
 import '../services/cloudinary_service.dart';
 
@@ -30,6 +29,17 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
   String get _projectId => widget.project['id'] as String;
   String get _userId => (widget.project['userId'] ?? '') as String;
 
+  // --- FIX: READ 'estimatedAmount' INSTEAD OF 'budget' ---
+  double get _totalBudget {
+    if (widget.project['estimatedAmount'] != null) {
+      return double.tryParse(widget.project['estimatedAmount'].toString()) ?? 0.0;
+    } else if (widget.project['budget'] != null) {
+      // Fallback just in case old data used 'budget'
+      return double.tryParse(widget.project['budget'].toString()) ?? 0.0;
+    }
+    return 0.0;
+  }
+
   CollectionReference<Map<String, dynamic>> get _billsRef =>
       _firestore.collection('bills');
 
@@ -49,7 +59,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
 
   String _formatTimestamp(Timestamp? timestamp) {
     if (timestamp == null) return "N/A";
-    final date = timestamp.toDate();
+    DateTime date = timestamp.toDate();
     return "${date.day}/${date.month}/${date.year}";
   }
 
@@ -159,6 +169,9 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
     final amountCtrl = TextEditingController();
     final upiCtrl = TextEditingController();
     XFile? qrFile;
+    
+    // Validation State
+    String? amountErrorText;
 
     await showDialog(
       context: context,
@@ -171,19 +184,51 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Display Budget
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    "Total Project Budget: ₹$_totalBudget",
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[700],
+                        fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(height: 10),
+
                 TextField(
                     controller: titleCtrl,
                     decoration:
                         const InputDecoration(labelText: 'Work Name')),
+                
                 TextField(
                     controller: amountCtrl,
-                    decoration:
-                        const InputDecoration(labelText: 'Amount'),
-                    keyboardType: TextInputType.number),
+                    keyboardType: TextInputType.number,
+                    // Real-time Validation
+                    onChanged: (value) {
+                      double enteredAmount = double.tryParse(value) ?? 0.0;
+                      if (enteredAmount > _totalBudget) {
+                        setDialogState(() {
+                          amountErrorText = "Exceeds total budget (₹$_totalBudget)";
+                        });
+                      } else {
+                        setDialogState(() {
+                          amountErrorText = null;
+                        });
+                      }
+                    },
+                    decoration: InputDecoration(
+                        labelText: 'Amount',
+                        errorText: amountErrorText,
+                        errorStyle: const TextStyle(color: Colors.red),
+                    ),
+                ),
+                
                 TextField(
                     controller: upiCtrl,
-                    decoration: const InputDecoration(
-                        labelText: 'UPI ID (Optional)')),
+                    decoration:
+                        const InputDecoration(labelText: 'UPI ID (Optional)')),
                 const SizedBox(height: 15),
                 ElevatedButton.icon(
                   onPressed: () async {
@@ -204,28 +249,37 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
             TextButton(
                 onPressed: () => Navigator.pop(context),
                 child: const Text('Cancel')),
+            
             ElevatedButton(
-              onPressed: () async {
-                if (titleCtrl.text.isEmpty || amountCtrl.text.isEmpty) return;
-                String? qrUrl;
-                if (qrFile != null) {
-                  qrUrl = await CloudinaryService.uploadImage(
-                      imageFile: qrFile!,
-                      userId: _userId,
-                      projectId: _projectId);
-                }
-                await _firestore.collection('transactions').add({
-                  'projectId': _projectId,
-                  'userId': _userId,
-                  'title': titleCtrl.text,
-                  'amount': double.parse(amountCtrl.text),
-                  'upiId': upiCtrl.text,
-                  'qrUrl': qrUrl,
-                  'status': 'pending',
-                  'date': FieldValue.serverTimestamp(),
-                });
-                if (context.mounted) Navigator.pop(context);
-              },
+              // Disable button if validation fails
+              onPressed: (amountErrorText != null) 
+                  ? null 
+                  : () async {
+                      if (titleCtrl.text.isEmpty || amountCtrl.text.isEmpty) return;
+                      
+                      // Safety Check
+                      double reqAmount = double.tryParse(amountCtrl.text) ?? 0.0;
+                      if (reqAmount > _totalBudget) return;
+
+                      String? qrUrl;
+                      if (qrFile != null) {
+                        qrUrl = await CloudinaryService.uploadImage(
+                            imageFile: qrFile!,
+                            userId: _userId,
+                            projectId: _projectId);
+                      }
+                      await _firestore.collection('transactions').add({
+                        'projectId': _projectId,
+                        'userId': _userId,
+                        'title': titleCtrl.text,
+                        'amount': reqAmount,
+                        'upiId': upiCtrl.text,
+                        'qrUrl': qrUrl,
+                        'status': 'pending',
+                        'date': FieldValue.serverTimestamp(),
+                      });
+                      if (context.mounted) Navigator.pop(context);
+                    },
               child: const Text('Submit Request'),
             )
           ],
@@ -269,7 +323,8 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                       : () async {
                           final imgs = await _picker.pickMultiImage();
                           if (imgs.isNotEmpty) {
-                            setDialogState(() => selectedFiles = imgs);
+                            setDialogState(
+                                () => selectedFiles = imgs);
                           }
                         },
                   icon: const Icon(Icons.image),
@@ -281,8 +336,8 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                 if (isUploading)
                   const Padding(
                     padding: EdgeInsets.only(top: 20),
-                    child:
-                        CircularProgressIndicator(color: primaryMaroon),
+                    child: CircularProgressIndicator(
+                        color: primaryMaroon),
                   ),
               ],
             ),
@@ -340,7 +395,8 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                       } catch (e) {
                         ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                                content: Text('Upload failed: $e')));
+                                content:
+                                    Text('Upload failed: $e')));
                       } finally {
                         setDialogState(
                             () => isUploading = false);
@@ -391,15 +447,14 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                 itemCount: docs.length,
                 itemBuilder: (context, i) {
                   final bill = docs[i].data();
-                  final imageUrls =
-                      (bill['imageUrls'] as List? ?? []);
+                  final imageUrls = (bill['imageUrls'] as List? ?? []);
                   return Card(
                     child: ExpansionTile(
                       title: Text(bill['title'] ?? 'Bill',
                           style: const TextStyle(
                               fontWeight: FontWeight.bold)),
-                      subtitle: Text(
-                          'Amount: ₹${bill['amount'] ?? '0'}'),
+                      subtitle:
+                          Text('Amount: ₹${bill['amount'] ?? '0'}'),
                       children: [
                         if (imageUrls.isNotEmpty)
                           Padding(
@@ -409,13 +464,11 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                               runSpacing: 8,
                               children: imageUrls
                                   .map((url) => GestureDetector(
-                                        onTap: () =>
-                                            _showFullScreenImage(
-                                                url.toString()),
+                                        onTap: () => _showFullScreenImage(
+                                            url.toString()),
                                         child: ClipRRect(
                                           borderRadius:
-                                              BorderRadius.circular(
-                                                  8),
+                                              BorderRadius.circular(8),
                                           child: Image.network(
                                               url.toString(),
                                               width: 80,
@@ -683,11 +736,9 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                       SizedBox(
                         height: 70,
                         child: ListView.builder(
-                          scrollDirection:
-                              Axis.horizontal,
+                          scrollDirection: Axis.horizontal,
                           itemCount: endImages.length,
-                          itemBuilder:
-                              (context, imgIndex) {
+                          itemBuilder: (context, imgIndex) {
                             return Padding(
                               padding:
                                   const EdgeInsets.only(
@@ -699,11 +750,10 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
                                             imgIndex]),
                                 child: ClipRRect(
                                   borderRadius:
-                                      BorderRadius
-                                          .circular(6),
+                                      BorderRadius.circular(
+                                          6),
                                   child: Image.network(
-                                      endImages[
-                                          imgIndex],
+                                      endImages[imgIndex],
                                       width: 70,
                                       height: 70,
                                       fit: BoxFit.cover),
@@ -757,66 +807,65 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen>
   }
 
   Future<void> _requestProjectCompletion() async {
-  setState(() => _isCompletionRequesting = true);
-  try {
-    final completed = await _getCompletedTasksCount();
-    final ongoing = await _getOngoingTasksCount();
-    final todo = await _getTodoTasksCount();
+    setState(() => _isCompletionRequesting = true);
+    try {
+      final completed = await _getCompletedTasksCount();
+      final ongoing = await _getOngoingTasksCount();
+      final todo = await _getTodoTasksCount();
 
-    if (completed == 0) {
+      if (completed == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Complete at least one work before requesting project completion.'),
+          ),
+        );
+        return;
+      }
+
+      if (ongoing > 0 || todo > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'All works must be completed or deleted. No To Do or Ongoing tasks allowed when requesting completion.'),
+          ),
+        );
+        return;
+      }
+
+      await _firestore
+          .collection('project_completion_requests')
+          .add({
+        'projectId': _projectId,
+        'userId': _userId,
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      await _firestore.collection('project_chats').add({
+        'projectId': _projectId,
+        'senderId': _userId,
+        'senderRole': 'user',
+        'message':
+            'User has requested to mark this project as completed.',
+        'type': 'system_completion_request',
+        'createdAt': FieldValue.serverTimestamp(),
+        'isReadByAdmin': false,
+      });
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-              'Complete at least one work before requesting project completion.'),
-        ),
+            content: Text(
+                'Completion request sent to admin, and message posted in chat.')),
       );
-      return;
-    }
-
-    if (ongoing > 0 || todo > 0) {
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'All works must be completed or deleted. No To Do or Ongoing tasks allowed when requesting completion.'),
-        ),
+        SnackBar(content: Text('Error sending request: $e')),
       );
-      return;
+    } finally {
+      if (mounted) setState(() => _isCompletionRequesting = false);
     }
-
-    // 1) Create completion request document
-    await _firestore
-        .collection('project_completion_requests')
-        .add({
-      'projectId': _projectId,
-      'userId': _userId,
-      'status': 'pending',
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-
-    // 2) Send a chat message that will be visible in ProjectChatSection
-    await _firestore.collection('project_messages').add({
-      'projectId': _projectId,
-      'message':
-          'User has requested to mark this project as completed. Please review all works and update the project status.',
-      'senderRole': 'user',                    // matches ProjectChatSection
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-            'Completion request sent to admin and a message posted in project chat.'),
-      ),
-    );
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error sending request: $e')),
-    );
-  } finally {
-    if (mounted) setState(() => _isCompletionRequesting = false);
   }
-}
-
 
   // ===================== TABS WRAPPERS =====================
 
