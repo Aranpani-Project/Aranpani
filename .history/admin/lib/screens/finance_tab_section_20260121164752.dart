@@ -19,11 +19,12 @@ class _FinanceTabSectionState extends State<FinanceTabSection> {
   static const Color primaryMaroon = Color(0xFF6D1B1B);
   static const Color darkMaroonText = Color(0xFF4A1010);
   
-  // Controller for the Transaction ID input
+  // Initializing the controller directly to avoid 'undefined' errors
   final TextEditingController _transactionController = TextEditingController();
 
   @override
   void dispose() {
+    // Always dispose controllers when the widget is removed
     _transactionController.dispose();
     super.dispose();
   }
@@ -34,37 +35,37 @@ class _FinanceTabSectionState extends State<FinanceTabSection> {
     );
   }
 
-  // DIALOG FUNCTION
   void _showMarkAsPaidDialog(String docId) {
-    debugPrint("Attempting to show dialog for doc: $docId"); // Debug log
-    
-    _transactionController.text = ""; // Reset input
+    // Safety check: ensure the controller is cleared before showing dialog
+    _transactionController.text = ""; 
     
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext dialogContext) {
+      builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text("Enter Payment Details"),
+          title: const Text("Confirm Payment"),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text("Enter the Transaction ID / Reference Number to mark this as paid."),
-              const SizedBox(height: 16),
+              const Text("Please enter the Transaction ID provided by the user."),
+              const SizedBox(height: 15),
               TextField(
                 controller: _transactionController,
                 autofocus: true,
                 decoration: const InputDecoration(
                   labelText: "Transaction ID",
+                  hintText: "Enter ID here",
                   border: OutlineInputBorder(),
-                  hintText: "e.g. 123456789",
                 ),
               ),
             ],
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+              onPressed: () {
+                Navigator.pop(context);
+              },
               child: const Text("Cancel"),
             ),
             ElevatedButton(
@@ -72,7 +73,7 @@ class _FinanceTabSectionState extends State<FinanceTabSection> {
               onPressed: () async {
                 String txnId = _transactionController.text.trim();
                 if (txnId.isEmpty) {
-                  _showErrorSnackBar("Please enter a Transaction ID");
+                  _showErrorSnackBar("Transaction ID is required");
                   return;
                 }
 
@@ -85,12 +86,12 @@ class _FinanceTabSectionState extends State<FinanceTabSection> {
                     'transactionId': txnId,
                     'paidAt': FieldValue.serverTimestamp(),
                   });
-                  if (mounted) Navigator.pop(dialogContext);
+                  if (mounted) Navigator.pop(context);
                 } catch (e) {
-                  _showErrorSnackBar("Update failed: $e");
+                  _showErrorSnackBar("Error updating record: $e");
                 }
               },
-              child: const Text("MARK PAID", style: TextStyle(color: Colors.white)),
+              child: const Text("PAID", style: TextStyle(color: Colors.white)),
             ),
           ],
         );
@@ -111,7 +112,7 @@ class _FinanceTabSectionState extends State<FinanceTabSection> {
         
         var docs = snapshot.data!.docs;
         
-        // Sorting
+        // Sorting: Pending first, then newest first
         docs.sort((a, b) {
           String statusA = a.data()['status'] ?? 'pending';
           String statusB = b.data()['status'] ?? 'pending';
@@ -151,48 +152,52 @@ class _FinanceTabSectionState extends State<FinanceTabSection> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (data['upiId'] != null)
-                          Text('UPI ID: ${data['upiId']}', style: const TextStyle(fontSize: 14)),
+                          Text('UPI ID: ${data['upiId']}', style: const TextStyle(fontSize: 15)),
                         
                         if (status == 'paid') ...[
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 8),
                           Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
+                            padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: Colors.green.withOpacity(0.1),
+                              color: Colors.grey[100],
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.green.withOpacity(0.3)),
                             ),
-                            child: Text('Transaction ID: $txnId', 
-                                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.receipt, size: 16, color: Colors.blueGrey),
+                                const SizedBox(width: 8),
+                                Text('Txn ID: $txnId', 
+                                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+                              ],
+                            ),
                           ),
                         ],
 
-                        if (status == 'pending') ...[
-                          const SizedBox(height: 10),
-                          if (data['qrUrl'] != null)
-                            Center(
-                              child: GestureDetector(
-                                onTap: () => widget.onShowImage(data['qrUrl']),
-                                child: Image.network(data['qrUrl'], height: 120),
-                              ),
-                            ),
-                          const SizedBox(height: 15),
+                        const SizedBox(height: 10),
+                        
+                        if (data['qrUrl'] != null && status == 'pending') ...[
+                          const Text("Scan QR to pay:", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          const SizedBox(height: 8),
+                          GestureDetector(
+                            onTap: () => widget.onShowImage(data['qrUrl']),
+                            child: Image.network(data['qrUrl'], height: 150),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+
+                        if (status == 'pending')
                           SizedBox(
                             width: double.infinity,
-                            child: ElevatedButton(
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.check_circle_outline, color: Colors.white),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
                                 padding: const EdgeInsets.symmetric(vertical: 12),
                               ),
-                              onPressed: () {
-                                _showMarkAsPaidDialog(docId);
-                              },
-                              child: const Text('MARK AS PAID', 
-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              onPressed: () => _showMarkAsPaidDialog(docId),
+                              label: const Text('MARK AS PAID', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                             ),
                           ),
-                        ],
                       ],
                     ),
                   )

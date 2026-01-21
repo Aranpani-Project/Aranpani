@@ -18,15 +18,7 @@ class FinanceTabSection extends StatefulWidget {
 class _FinanceTabSectionState extends State<FinanceTabSection> {
   static const Color primaryMaroon = Color(0xFF6D1B1B);
   static const Color darkMaroonText = Color(0xFF4A1010);
-  
-  // Controller for the Transaction ID input
   final TextEditingController _transactionController = TextEditingController();
-
-  @override
-  void dispose() {
-    _transactionController.dispose();
-    super.dispose();
-  }
 
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -34,67 +26,63 @@ class _FinanceTabSectionState extends State<FinanceTabSection> {
     );
   }
 
-  // DIALOG FUNCTION
-  void _showMarkAsPaidDialog(String docId) {
-    debugPrint("Attempting to show dialog for doc: $docId"); // Debug log
-    
-    _transactionController.text = ""; // Reset input
-    
+  // This replaces the old UPI/Cash selection logic
+  void _inputTransactionId(String docId) {
+    _transactionController.clear();
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text("Enter Payment Details"),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text("Enter the Transaction ID / Reference Number to mark this as paid."),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _transactionController,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: "Transaction ID",
-                  border: OutlineInputBorder(),
-                  hintText: "e.g. 123456789",
-                ),
+      builder: (context) => AlertDialog(
+        title: const Text("Confirm Payment"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Please enter the Transaction ID / Reference Number below to mark this as paid."),
+            const SizedBox(height: 15),
+            TextField(
+              controller: _transactionController,
+              decoration: const InputDecoration(
+                labelText: "Transaction ID",
+                hintText: "Enter ID here",
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.receipt_long),
               ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text("Cancel"),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-              onPressed: () async {
-                String txnId = _transactionController.text.trim();
-                if (txnId.isEmpty) {
-                  _showErrorSnackBar("Please enter a Transaction ID");
-                  return;
-                }
-
-                try {
-                  await FirebaseFirestore.instance
-                      .collection('transactions')
-                      .doc(docId)
-                      .update({
-                    'status': 'paid',
-                    'transactionId': txnId,
-                    'paidAt': FieldValue.serverTimestamp(),
-                  });
-                  if (mounted) Navigator.pop(dialogContext);
-                } catch (e) {
-                  _showErrorSnackBar("Update failed: $e");
-                }
-              },
-              child: const Text("MARK PAID", style: TextStyle(color: Colors.white)),
             ),
           ],
-        );
-      },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            onPressed: () async {
+              String txnId = _transactionController.text.trim();
+              if (txnId.isEmpty) {
+                _showErrorSnackBar("Transaction ID is required");
+                return;
+              }
+
+              try {
+                await FirebaseFirestore.instance
+                    .collection('transactions')
+                    .doc(docId)
+                    .update({
+                  'status': 'paid',
+                  'transactionId': txnId,
+                  'paidAt': FieldValue.serverTimestamp(),
+                });
+                Navigator.pop(context);
+              } catch (e) {
+                _showErrorSnackBar("Failed to update: $e");
+              }
+            },
+            child: const Text("SUBMIT & PAID", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -106,12 +94,11 @@ class _FinanceTabSectionState extends State<FinanceTabSection> {
           .where('projectId', isEqualTo: widget.projectId)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        
+
         var docs = snapshot.data!.docs;
         
-        // Sorting
+        // Sorting: Pending first, then by date
         docs.sort((a, b) {
           String statusA = a.data()['status'] ?? 'pending';
           String statusB = b.data()['status'] ?? 'pending';
@@ -137,12 +124,17 @@ class _FinanceTabSectionState extends State<FinanceTabSection> {
             return Card(
               elevation: 2,
               margin: const EdgeInsets.only(bottom: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: ExpansionTile(
+                leading: Icon(
+                  status == 'paid' ? Icons.check_circle : Icons.pending_actions,
+                  color: status == 'paid' ? Colors.green : Colors.orange,
+                ),
                 title: Text(data['title'] ?? 'Request',
                     style: const TextStyle(fontWeight: FontWeight.bold, color: darkMaroonText)),
                 subtitle: Text('₹$amount • ${status.toUpperCase()}',
                     style: TextStyle(
-                        color: status == 'paid' ? Colors.green : (status == 'rejected' ? Colors.red : Colors.orange),
+                        color: status == 'paid' ? Colors.green : Colors.orange,
                         fontWeight: FontWeight.bold)),
                 children: [
                   Padding(
@@ -151,33 +143,29 @@ class _FinanceTabSectionState extends State<FinanceTabSection> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (data['upiId'] != null)
-                          Text('UPI ID: ${data['upiId']}', style: const TextStyle(fontSize: 14)),
+                           Text('Pay to (UPI ID): ${data['upiId']}', style: const TextStyle(fontSize: 14)),
                         
+                        const Divider(height: 20),
+
                         if (status == 'paid') ...[
+                          const Text("Payment Details:", style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 4),
+                          Text('Transaction ID: $txnId', 
+                              style: const TextStyle(fontSize: 15, color: Colors.blueGrey, fontWeight: FontWeight.w600)),
                           const SizedBox(height: 10),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.green.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.green.withOpacity(0.3)),
-                            ),
-                            child: Text('Transaction ID: $txnId', 
-                                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
-                          ),
                         ],
 
-                        if (status == 'pending') ...[
-                          const SizedBox(height: 10),
-                          if (data['qrUrl'] != null)
-                            Center(
-                              child: GestureDetector(
-                                onTap: () => widget.onShowImage(data['qrUrl']),
-                                child: Image.network(data['qrUrl'], height: 120),
-                              ),
-                            ),
+                        if (data['qrUrl'] != null && status == 'pending') ...[
+                          const Text("Scan QR to Pay:", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          const SizedBox(height: 8),
+                          GestureDetector(
+                            onTap: () => widget.onShowImage(data['qrUrl']),
+                            child: Image.network(data['qrUrl'], height: 150),
+                          ),
                           const SizedBox(height: 15),
+                        ],
+
+                        if (status == 'pending')
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
@@ -185,14 +173,11 @@ class _FinanceTabSectionState extends State<FinanceTabSection> {
                                 backgroundColor: Colors.green,
                                 padding: const EdgeInsets.symmetric(vertical: 12),
                               ),
-                              onPressed: () {
-                                _showMarkAsPaidDialog(docId);
-                              },
-                              child: const Text('MARK AS PAID', 
+                              onPressed: () => _inputTransactionId(docId),
+                              child: const Text('I HAVE PAID (ENTER ID)', 
                                   style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                             ),
                           ),
-                        ],
                       ],
                     ),
                   )

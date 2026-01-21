@@ -22,49 +22,39 @@ class _FinanceTabSectionState extends State<FinanceTabSection> {
   // Controller for the Transaction ID input
   final TextEditingController _transactionController = TextEditingController();
 
-  @override
-  void dispose() {
-    _transactionController.dispose();
-    super.dispose();
-  }
-
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 
-  // DIALOG FUNCTION
+  // Dialog to input Transaction ID and mark as paid
   void _showMarkAsPaidDialog(String docId) {
-    debugPrint("Attempting to show dialog for doc: $docId"); // Debug log
-    
-    _transactionController.text = ""; // Reset input
-    
+    _transactionController.clear();
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext dialogContext) {
+      builder: (context) {
         return AlertDialog(
-          title: const Text("Enter Payment Details"),
+          title: const Text("Confirm Payment"),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text("Enter the Transaction ID / Reference Number to mark this as paid."),
-              const SizedBox(height: 16),
+              const Text("Please enter the Transaction ID provided by the user."),
+              const SizedBox(height: 15),
               TextField(
                 controller: _transactionController,
-                autofocus: true,
                 decoration: const InputDecoration(
                   labelText: "Transaction ID",
+                  hintText: "Enter ID here",
                   border: OutlineInputBorder(),
-                  hintText: "e.g. 123456789",
                 ),
               ),
             ],
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+              onPressed: () => Navigator.pop(context),
               child: const Text("Cancel"),
             ),
             ElevatedButton(
@@ -72,7 +62,7 @@ class _FinanceTabSectionState extends State<FinanceTabSection> {
               onPressed: () async {
                 String txnId = _transactionController.text.trim();
                 if (txnId.isEmpty) {
-                  _showErrorSnackBar("Please enter a Transaction ID");
+                  _showErrorSnackBar("Transaction ID is required");
                   return;
                 }
 
@@ -85,12 +75,12 @@ class _FinanceTabSectionState extends State<FinanceTabSection> {
                     'transactionId': txnId,
                     'paidAt': FieldValue.serverTimestamp(),
                   });
-                  if (mounted) Navigator.pop(dialogContext);
+                  Navigator.pop(context);
                 } catch (e) {
-                  _showErrorSnackBar("Update failed: $e");
+                  _showErrorSnackBar("Error updating record: $e");
                 }
               },
-              child: const Text("MARK PAID", style: TextStyle(color: Colors.white)),
+              child: const Text("PAID", style: TextStyle(color: Colors.white)),
             ),
           ],
         );
@@ -106,12 +96,11 @@ class _FinanceTabSectionState extends State<FinanceTabSection> {
           .where('projectId', isEqualTo: widget.projectId)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
         
         var docs = snapshot.data!.docs;
         
-        // Sorting
+        // Sorting logic: Pending on top, then by timestamp
         docs.sort((a, b) {
           String statusA = a.data()['status'] ?? 'pending';
           String statusB = b.data()['status'] ?? 'pending';
@@ -151,48 +140,36 @@ class _FinanceTabSectionState extends State<FinanceTabSection> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (data['upiId'] != null)
-                          Text('UPI ID: ${data['upiId']}', style: const TextStyle(fontSize: 14)),
+                          Text('UPI ID: ${data['upiId']}', style: const TextStyle(fontSize: 15)),
                         
                         if (status == 'paid') ...[
-                          const SizedBox(height: 10),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.green.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.green.withOpacity(0.3)),
-                            ),
-                            child: Text('Transaction ID: $txnId', 
-                                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
-                          ),
+                          const SizedBox(height: 5),
+                          Text('Transaction ID: $txnId', 
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
                         ],
 
-                        if (status == 'pending') ...[
-                          const SizedBox(height: 10),
-                          if (data['qrUrl'] != null)
-                            Center(
-                              child: GestureDetector(
-                                onTap: () => widget.onShowImage(data['qrUrl']),
-                                child: Image.network(data['qrUrl'], height: 120),
-                              ),
-                            ),
-                          const SizedBox(height: 15),
+                        const SizedBox(height: 10),
+                        
+                        // Show QR only if pending
+                        if (data['qrUrl'] != null && status == 'pending') ...[
+                          GestureDetector(
+                            onTap: () => widget.onShowImage(data['qrUrl']),
+                            child: Image.network(data['qrUrl'], height: 150),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+
+                        // Action Button
+                        if (status == 'pending')
                           SizedBox(
                             width: double.infinity,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                              ),
-                              onPressed: () {
-                                _showMarkAsPaidDialog(docId);
-                              },
-                              child: const Text('MARK AS PAID', 
-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.check_circle, color: Colors.white),
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                              onPressed: () => _showMarkAsPaidDialog(docId),
+                              label: const Text('MARK AS PAID', style: TextStyle(color: Colors.white)),
                             ),
                           ),
-                        ],
                       ],
                     ),
                   )
